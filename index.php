@@ -155,6 +155,8 @@ function runScheduledBroadcasts(){
         }
         if($changed){$db['settings']['scheduled_broadcasts']=$sched;saveDB($id,$db);}
     }
+    runPremiumDripCampaigns();
+    runInactiveNudges();
 }
 function verifyExtApiToken($token){
     if(!$token)return false;
@@ -180,6 +182,197 @@ function sendAdminOtp($code){
     return !empty($r['ok']);
 }
 function csvEsc($v){$v=str_replace('"','""',(string)$v);return '"'.$v.'"';}
+
+// ─── Premium Hub (10 features) ───────────────────────────────────────────────
+function premiumDefaults(){
+    return[
+        'auto_replies'=>[],
+        'drip_campaigns'=>[],
+        'saved_segments'=>[],
+        'spam_shield'=>['enabled'=>false,'keywords'=>[],'block_links'=>false,'action'=>'block'],
+        'quiet_hours'=>['enabled'=>false,'start'=>'22:00','end'=>'08:00','tz'=>'Asia/Kolkata','message'=>'🌙 Quiet hours — hum abhi offline hain. Kal try karein!'],
+        'inactive_nudge'=>['enabled'=>false,'days'=>7,'message'=>'👋 Bahut din ho gaye! Wapas aao — naye features explore karo.','media'=>'','last_run'=>''],
+        'ab_splits'=>[],
+        'webhook_log'=>['enabled'=>true,'max'=>150],
+    ];
+}
+function getPremium(&$db){
+    $def=premiumDefaults();
+    if(!isset($db['settings']['premium']))$db['settings']['premium']=$def;
+    else $db['settings']['premium']=array_replace_recursive($def,$db['settings']['premium']);
+    return $db['settings']['premium'];
+}
+function premiumLogWebhook($botId,$row){
+    $db=loadDB($botId);$prem=getPremium($db);
+    if(empty($prem['webhook_log']['enabled']))return;
+    $f=getBotDir($botId).'premium_webhook_log.json';
+    $l=file_exists($f)?json_decode(file_get_contents($f),true):[];
+    if(!is_array($l))$l=[];
+    array_unshift($l,array_merge(['time'=>date('c')],$row));
+    $max=(int)($prem['webhook_log']['max']??150);
+    if(count($l)>$max)$l=array_slice($l,0,$max);
+    file_put_contents($f,json_encode($l,JSON_UNESCAPED_UNICODE),LOCK_EX);
+}
+function premiumGetWebhookLogs($botId,$limit=80){
+    $f=getBotDir($botId).'premium_webhook_log.json';
+    $l=file_exists($f)?json_decode(file_get_contents($f),true):[];
+    return is_array($l)?array_slice($l,0,$limit):[];
+}
+function premiumMatchAutoReply($prem,$msgText){
+    $msg=trim($msgText);if($msg==='')return null;
+    $low=mb_strtolower($msg);
+    foreach($prem['auto_replies']??[] as $ar){
+        if(empty($ar['enabled']))continue;
+        $kw=mb_strtolower(trim($ar['keyword']??''));if($kw==='')continue;
+        $mode=$ar['match']??'contains';
+        $hit=($mode==='exact'&&$low===$kw)||($mode==='startswith'&&str_starts_with($low,$kw))||($mode==='contains'&&str_contains($low,$kw));
+        if($hit)return $ar;
+    }
+    return null;
+}
+function premiumCheckSpam($botId,$chatId,$uid,&$u,$db,$prem,$msgText,$token,$isGroup){
+    $ss=$prem['spam_shield']??[];
+    if(empty($ss['enabled'])||$isGroup)return false;
+    $low=mb_strtolower(trim($msgText));
+    $hit=false;
+    foreach($ss['keywords']??[] as $kw){if($kw!==''&&str_contains($low,mb_strtolower($kw))){$hit=true;break;}}
+    if(!$hit&&!empty($ss['block_links'])&&preg_match('/https?:\/\/|t\.me\/|telegram\.me\//i',$msgText))$hit=true;
+    if(!$hit)return false;
+    $act=$ss['action']??'block';
+    if($act==='ban'){$u['banned']=true;saveDB($botId,$db);tg('sendMessage',['chat_id'=>$chatId,'text'=>'🚫 Spam detected — aap blocked ho gaye.','parse_mode'=>'HTML'],$token);}
+    elseif($act==='warn')tg('sendMessage',['chat_id'=>$chatId,'text'=>'⚠️ Spam-like message blocked.','parse_mode'=>'HTML'],$token);
+    addLog($botId,"SpamShield: uid=$uid action=$act",'warn');
+    return true;
+}
+function premiumIsQuietHours($prem){
+    $qh=$prem['quiet_hours']??[];
+    if(empty($qh['enabled']))return false;
+    try{$tz=new DateTimeZone($qh['tz']??'Asia/Kolkata');}catch(Exception $e){$tz=new DateTimeZone('UTC');}
+    $now=new DateTime('now',$tz);$hm=(int)$now->format('H')*60+(int)$now->format('i');
+    $p=explode(':',$qh['start']??'22:00');$s=(int)($p[0]??22)*60+(int)($p[1]??0);
+    $p2=explode(':',$qh['end']??'08:00');$e=(int)($p2[0]??8)*60+(int)($p2[1]??0);
+    if($s<=$e)return $hm>=$s&&$hm<$e;
+    return $hm>=$s||$hm<$e;
+}
+function premiumResolveAbPage($db,$trigger){
+    $prem=getPremium($db);
+    foreach($prem['ab_splits']??[] as $ab){
+        if(empty($ab['enabled']))continue;
+        if(strtolower(trim($ab['trigger']??''))!==strtolower(trim($trigger)))continue;
+        $ratio=max(1,min(99,(int)($ab['ratio']??50)));
+        $pid=random_int(1,100)<=$ratio?($ab['page_a']??''):($ab['page_b']??'');
+        $pg=findPageById($db,$pid);
+        if($pg)return $pg;
+    }
+    return null;
+}
+function premiumGetSegmentUsers($db,$segmentId){
+    if(in_array($segmentId,['all','active7','has_key','no_key'],true))return getBroadcastTargets($db,$segmentId);
+    $prem=getPremium($db);$now=time();$out=[];
+    foreach($prem['saved_segments']??[] as $seg){
+        if(($seg['id']??'')!==$segmentId)continue;
+        $rules=$seg['rules']??[];
+        foreach($db['users']??[] as $uid=>$u){
+            if(!empty($u['banned']))continue;
+            $ls=strtotime($u['last_seen']??$u['joined']??'');
+            if(!empty($rules['active_days'])){if(!$ls||$ls<$now-((int)$rules['active_days']*86400))continue;}
+            if(!empty($rules['inactive_days'])){if(!$ls||$ls>$now-((int)$rules['inactive_days']*86400))continue;}
+            if(!empty($rules['has_key'])&&empty($u['key']))continue;
+            if(!empty($rules['no_key'])&&!empty($u['key']))continue;
+            if(!empty($rules['min_searches'])&&($u['searches']??0)<(int)$rules['min_searches'])continue;
+            $out[]=(string)$uid;
+        }
+        return $out;
+    }
+    return getBroadcastTargets($db,'all');
+}
+function premiumEnrollDrips($botId,&$db,$uid){
+    $prem=getPremium($db);$targetsCache=[];$changed=false;
+    foreach($prem['drip_campaigns'] as $ci=>&$camp){
+        if(empty($camp['enabled']))continue;
+        $seg=$camp['segment']??'all';
+        if(!isset($targetsCache[$seg]))$targetsCache[$seg]=premiumGetSegmentUsers($db,$seg);
+        if(!in_array((string)$uid,$targetsCache[$seg],true))continue;
+        if(!isset($camp['enrolled']))$camp['enrolled']=[];
+        if(isset($camp['enrolled'][(string)$uid]))continue;
+        $delay=(int)(($camp['steps'][0]['delay_hours']??0));
+        $camp['enrolled'][(string)$uid]=['step'=>0,'next_at'=>date('Y-m-d H:i:s',time()+max(0,$delay)*3600)];
+        $changed=true;
+    }
+    if($changed){$db['settings']['premium']=$prem;saveDB($botId,$db);}
+}
+function runPremiumDripCampaigns(){
+    foreach(loadBots() as $b){
+        $id=$b['id'];$tok=trim($b['token']??'');if(!$tok)continue;
+        $db=loadDB($id);$prem=getPremium($db);$changed=false;
+        foreach($prem['drip_campaigns'] as $ci=>&$camp){
+            if(empty($camp['enabled'])||empty($camp['enrolled']))continue;
+            foreach($camp['enrolled'] as $uid=>$st){
+                $steps=$camp['steps']??[];
+                if(($st['step']??0)>=count($steps)){unset($camp['enrolled'][$uid]);$changed=true;continue;}
+                $nextAt=strtotime($st['next_at']??'');if(!$nextAt||$nextAt>time())continue;
+                $step=$steps[$st['step']];
+                sendBroadcastToTargets([(string)$uid],$step['message']??'',$step['media']??'',$tok);
+                $st['step']++;
+                if($st['step']>=count($steps))unset($camp['enrolled'][$uid]);
+                else{
+                    $delay=(int)($steps[$st['step']]['delay_hours']??24);
+                    $st['next_at']=date('Y-m-d H:i:s',time()+max(1,$delay)*3600);
+                    $camp['enrolled'][$uid]=$st;
+                }
+                $changed=true;
+            }
+        }
+        if($changed){$db['settings']['premium']=$prem;saveDB($id,$db);addLog($id,'Premium drip step sent','info');}
+    }
+}
+function runInactiveNudges(){
+    foreach(loadBots() as $b){
+        $id=$b['id'];$tok=trim($b['token']??'');if(!$tok)continue;
+        $db=loadDB($id);$prem=getPremium($db);$nudge=$prem['inactive_nudge']??[];
+        if(empty($nudge['enabled']))continue;
+        $days=max(1,(int)($nudge['days']??7));$cut=time()-($days*86400);$sent=0;$changed=false;
+        foreach($db['users']??[] as $uid=>$u){
+            if(!empty($u['banned']))continue;
+            $ls=strtotime($u['last_seen']??$u['joined']??'');if(!$ls||$ls>$cut)continue;
+            if(!empty($u['premium_nudged'])&&strtotime($u['premium_nudged'])>$ls)continue;
+            sendBroadcastToTargets([(string)$uid],$nudge['message']??'',$nudge['media']??'',$tok);
+            $db['users'][$uid]['premium_nudged']=date('Y-m-d H:i:s');$sent++;$changed=true;
+            usleep(50000);
+        }
+        if($changed){
+            $prem['inactive_nudge']['last_run']=date('c');
+            $db['settings']['premium']=$prem;saveDB($id,$db);
+            addLog($id,"Inactive nudge: $sent users",'info');
+        }
+    }
+}
+function generateFlowFromPrompt($prompt){
+    $p=mb_strtolower(trim($prompt));$id=uniqid('pg_');
+    $trig=preg_replace('/[^a-z0-9_]/','_',substr(preg_replace('/\s+/','_',explode(' ',$p)[0]??'flow'),0,20));
+    if($trig==='')$trig='auto_'.substr($id,-6);
+    if(str_contains($p,'browser')||str_contains($p,'selenium')||str_contains($p,'playwright')){
+        return['id'=>$id,'trigger'=>$trig,'type'=>'browser','is_free_text'=>false,'text'=>'🌐 Browser automation chal raha hai…','browser_url'=>'https://example.com','browser_mode'=>'playwright','buttons'=>[],'custom_vars'=>''];
+    }
+    if(str_contains($p,'api')||str_contains($p,'search')||str_contains($p,'curl')){
+        return['id'=>$id,'trigger'=>$trig,'type'=>'api','is_free_text'=>false,'text'=>"🔍 Result for <b>{query}</b>:\n\n{result}",'api_url'=>'https://api.example.com/search?q={query}','json_root'=>'','not_found'=>'❌ Kuch nahi mila.','msg_loading'=>'⏳ Searching…','buttons'=>[],'custom_vars'=>''];
+    }
+    if(str_contains($p,'free')||str_contains($p,'reply')||str_contains($p,'auto')){
+        return['id'=>$id,'trigger'=>'','type'=>'text','is_free_text'=>true,'ft_chat_mode'=>'both','text'=>'💬 {tg_name}, aapka message mil gaya: <i>{query}</i>','buttons'=>[],'custom_vars'=>''];
+    }
+    return['id'=>$id,'trigger'=>$trig,'type'=>'text','is_free_text'=>false,'text'=>"👋 Namaste {tg_mention}!\n\nAapne likha: <b>{query}</b>\n\n<i>Prompt: ".htmlspecialchars(mb_substr($prompt,0,80),ENT_QUOTES,'UTF-8')."</i>",'buttons'=>[],'custom_vars'=>''];
+}
+function exportAnalyticsCsv($db){
+    $an=$db['analytics']??['daily'=>[],'page_hits'=>[]];
+    $csv="Date,Commands,Searches\n";
+    foreach($an['daily']??[] as $day=>$v)$csv.=csvEsc($day).','.($v['cmds']??0).','.($v['searches']??0)."\n";
+    $csv.="\nFlow ID,Trigger,Type,Hits\n";
+    foreach($db['pages']??[] as $pg){
+        $pid=$pg['id']??'';
+        $csv.=csvEsc($pid).','.csvEsc($pg['trigger']??'').','.csvEsc($pg['type']??'text').','.($an['page_hits'][$pid]??0)."\n";
+    }
+    return $csv;
+}
 
 function loadBots(){return file_exists(MASTER_FILE)?(json_decode(file_get_contents(MASTER_FILE),true)?:[]):[];}
 function saveBots($b){file_put_contents(MASTER_FILE,json_encode($b,JSON_PRETTY_PRINT),LOCK_EX);}
@@ -2855,6 +3048,7 @@ if(isset($_GET['webhook_bot'])){
         }
         saveDB($botId,$db);
         $u=&$db['users'][$uid];$u['name']=$name;if($uname)$u['username']=$uname;
+        $u['last_seen']=date('Y-m-d H:i:s');
         if($u['banned']??false){http_response_code(200);exit;}
         if($botMaint&&$uid!==($s['adminId']??'')){http_response_code(200);exit;}
 
@@ -4115,6 +4309,7 @@ if(isset($_GET['webhook_bot'])){
                     $u['active_page']='';
                     saveDB($botId,$db);
                 }
+                premiumEnrollDrips($botId,$db,$uid);
 
                 // --- Rose Help deeplink: /start help ---
                 if(trim($query)==='help'&&!$isGroup){
@@ -4149,7 +4344,9 @@ if(isset($_GET['webhook_bot'])){
 
                 if(!empty($p['is_free_text']))continue;
                 if(strtolower(trim($p['trigger']??''))!==strtolower($cmdStr))continue;
-                runMatchedPage($botId,$chatId,null,$u,$db,$s,$query,$p,$token);
+                $abPg=premiumResolveAbPage($db,$cmdStr);
+                if($abPg)runMatchedPage($botId,$chatId,null,$u,$db,$s,$query,$abPg,$token);
+                else runMatchedPage($botId,$chatId,null,$u,$db,$s,$query,$p,$token);
                 addLog($botId,"Cmd: /$cmdStr by $name",'info');
                 http_response_code(200);exit;
             }
@@ -4211,6 +4408,26 @@ if(isset($_GET['webhook_bot'])){
         }
 
         if(execLinkAutomation($botId,$chatId,$u,$db,$s,$msgText,$token)){http_response_code(200);exit;}
+        $prem=getPremium($db);
+        if(premiumCheckSpam($botId,$chatId,$uid,$u,$db,$prem,$msgText,$token,$isGroup)){http_response_code(200);exit;}
+        if(!$isGroup&&!str_starts_with($msgText,'/')){
+            if(premiumIsQuietHours($prem)){
+                $today=date('Y-m-d');
+                if(!empty($prem['quiet_hours']['message'])&&($u['quiet_day']??'')!==$today){
+                    tg('sendMessage',['chat_id'=>$chatId,'text'=>$prem['quiet_hours']['message'],'parse_mode'=>'HTML'],$token);
+                    $u['quiet_day']=$today;saveDB($botId,$db);
+                }
+            }else{
+                $ar=premiumMatchAutoReply($prem,$msgText);
+                if($ar&&!empty($ar['reply'])){
+                    $media=$ar['media']??'';
+                    if($media)sendLong($botId,$chatId,null,$ar['reply'],$media,'',false,$token);
+                    else tg('sendMessage',['chat_id'=>$chatId,'text'=>$ar['reply'],'parse_mode'=>'HTML'],$token);
+                    addLog($botId,'AutoReply: '.mb_substr($msgText,0,30),'info');
+                    http_response_code(200);exit;
+                }
+            }
+        }
         handleFreeText($botId,$chatId,$isGroup,$uid,$u,$db,$s,$msgText,$token,$botUsername);
     }
     http_response_code(200);exit;
@@ -4567,6 +4784,7 @@ if($pageEarly==='flow_webhook'){
         $fwDb['users'][$fwChat]=['id'=>$fwChat,'name'=>'WebhookUser','username'=>'','searchesLeft'=>999,'searches'=>0,'joined'=>date('Y-m-d H:i:s'),'banned'=>false,'key'=>'','active_page'=>''];
     }
     $fwU=&$fwDb['users'][$fwChat];$fwS=$fwDb['settings'];
+    premiumLogWebhook($fwBot,['flow'=>$fwPage,'chat_id'=>$fwChat,'query'=>$fwQuery,'ip'=>$_SERVER['REMOTE_ADDR']??'']);
     runMatchedPage($fwBot,$fwChat,null,$fwU,$fwDb,$fwS,$fwQuery,$fwP,$fwTok);
     saveDB($fwBot,$fwDb);
     echo json_encode(['ok'=>true,'triggered'=>$fwPage,'query'=>$fwQuery]);exit;
@@ -5635,6 +5853,45 @@ if($page==='api'){
         case 'run_cron_now':
             runScheduledBroadcasts();jout(['ok'=>true]);break;
 
+        case 'get_premium_settings':
+            if(!$actId)jout(['ok'=>false,'error'=>'No bot']);
+            getPremium($db);
+            jout(['ok'=>true,'data'=>$db['settings']['premium'],'pages'=>array_map(fn($p)=>['id'=>$p['id']??'','trigger'=>$p['trigger']??'','type'=>$p['type']??'text'],$db['pages']??[])]);break;
+
+        case 'save_premium_settings':
+            if(!$actId)jout(['ok'=>false,'error'=>'No bot']);
+            $in=$body['premium']??[];
+            if(!is_array($in))jout(['ok'=>false,'error'=>'Invalid']);
+            $db['settings']['premium']=array_replace_recursive(getPremium($db),$in);
+            saveDB($actId,$db);auditLog('save_premium_settings',$actId,'info');jout(['ok'=>true]);break;
+
+        case 'get_webhook_logs':
+            if(!$actId)jout(['ok'=>false,'error'=>'No bot']);
+            jout(['ok'=>true,'data'=>premiumGetWebhookLogs($actId)]);break;
+
+        case 'clear_webhook_logs':
+            if(!$actId)jout(['ok'=>false,'error'=>'No bot']);
+            $f=getBotDir($actId).'premium_webhook_log.json';
+            file_put_contents($f,'[]',LOCK_EX);jout(['ok'=>true]);break;
+
+        case 'export_analytics_csv':
+            if(!$actId)jout(['ok'=>false,'error'=>'No bot']);
+            jout(['ok'=>true,'csv'=>exportAnalyticsCsv($db),'filename'=>'analytics_'.$actId.'_'.date('Y-m-d').'.csv']);break;
+
+        case 'generate_ai_flow':
+            if(!$actId)jout(['ok'=>false,'error'=>'No bot']);
+            $prompt=trim($body['prompt']??'');
+            if(strlen($prompt)<3)jout(['ok'=>false,'error'=>'Describe your flow (min 3 chars)']);
+            $pg=generateFlowFromPrompt($prompt);
+            $db['pages'][]=$pg;saveDB($actId,$db);saveFlowVersion($actId,$pg);
+            auditLog('generate_ai_flow',$pg['id']??'','info');
+            jout(['ok'=>true,'page'=>$pg]);break;
+
+        case 'preview_segment_count':
+            if(!$actId)jout(['ok'=>false,'error'=>'No bot']);
+            $seg=$body['segment']??'all';
+            jout(['ok'=>true,'count'=>count(premiumGetSegmentUsers($db,$seg))]);break;
+
         default:jout(['ok'=>false,'error'=>'Unknown action']);
     }
 }
@@ -5868,6 +6125,13 @@ body.admin-app .panel.active{animation:panelIn .22s ease;}
 .cmd-item kbd{margin-left:auto;font-size:9px;color:var(--tf);font-family:'Share Tech Mono';}
 .cmd-foot{padding:8px 12px;font-size:10px;color:var(--tf);font-family:'Share Tech Mono';border-top:1px solid var(--b);}
 .chart-bars{display:flex;align-items:flex-end;gap:6px;height:120px;padding:10px 0;}
+.prem-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;}
+.prem-card{background:var(--s2);border:1px solid var(--b);border-radius:8px;padding:10px;display:flex;flex-direction:column;gap:4px;font-size:11px;}
+.prem-card strong{color:var(--t);font-size:12px;}
+.prem-card span{color:var(--td);line-height:1.4;}
+.prem-num{font-family:'Orbitron',sans-serif;font-size:9px;color:var(--p);letter-spacing:1px;}
+.prem-row{background:var(--s2);border:1px solid var(--b);border-radius:8px;padding:10px;margin-bottom:8px;}
+.prem-row-h{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:8px;flex-wrap:wrap;}
 .chart-bar{flex:1;min-width:20px;background:linear-gradient(180deg,var(--c),rgba(0,245,255,.2));border-radius:4px 4px 0 0;position:relative;min-height:4px;}
 .chart-bar span{position:absolute;bottom:-16px;left:50%;transform:translateX(-50%);font-size:8px;color:var(--td);font-family:'Share Tech Mono';white-space:nowrap;}
 .notif-panel{display:none;position:fixed;top:var(--topbar-h);right:12px;width:min(340px,92vw);max-height:360px;overflow-y:auto;background:var(--s);border:1px solid var(--b);border-radius:12px;z-index:99999;box-shadow:0 12px 40px rgba(0,0,0,.5);}
@@ -5979,6 +6243,7 @@ body.theme-amoled{--bg:#000;--s:#050505;--s2:#0a0a0a;--s3:#111;}
       <div class="nav-grp-body">
         <button class="ni active" data-nav="dash" onclick="nav('dash',this)">📊 Dashboard</button>
         <button class="ni" data-nav="analytics" onclick="nav('analytics',this)">📈 Analytics</button>
+        <button class="ni ni-prem" data-nav="premium" onclick="nav('premium',this)">💎 Premium Hub</button>
         <button class="ni" data-nav="security" onclick="nav('security',this)">🛡️ Security Pro</button>
         <button class="ni" data-nav="tools" onclick="nav('tools',this)">🧰 Tools &amp; Backup</button>
         <button class="ni" data-nav="bots" onclick="nav('bots',this)">🤖 Manage Bots</button>
@@ -6031,7 +6296,7 @@ body.theme-amoled{--bg:#000;--s:#050505;--s2:#0a0a0a;--s3:#111;}
     </div>
     <a href="?page=logout" class="ni" style="color:var(--r);margin-top:6px">🚪 Logout</a>
   </nav>
-  <div class="sb-foot">Ctrl+K quick jump · v8</div>
+  <div class="sb-foot">Ctrl+K quick jump · v10 Premium</div>
 </aside>
 
 <div class="main">
@@ -6151,6 +6416,104 @@ body.theme-amoled{--bg:#000;--s:#050505;--s2:#0a0a0a;--s3:#111;}
     <div class="card"><div class="sh"><div class="st">📜 FLOW VERSION HISTORY</div></div>
       <div class="fg mb"><div class="fgrp"><label class="fl">Page ID</label><input type="text" id="fv-page" class="fi" placeholder="pg_xxx"></div><div class="fgrp" style="justify-content:flex-end"><label class="fl">&nbsp;</label><button class="btn bg" onclick="loadFlowVersions()">Load Versions</button></div></div>
       <div id="fv-list"></div>
+    </div>
+  </div>
+
+  <!-- PREMIUM HUB (10 features) -->
+  <div class="panel" id="p-premium">
+    <div class="dash-hero" style="margin-bottom:14px">
+      <div>
+        <h2>💎 Premium Hub</h2>
+        <p>10 advanced automation features — Smart replies, drip campaigns, segments, A/B testing, spam shield &amp; more. No payment required.</p>
+      </div>
+      <button type="button" class="btn bp" onclick="savePremiumAll()">💾 Save All Premium</button>
+    </div>
+    <div class="prem-grid mb">
+      <div class="prem-card"><span class="prem-num">01</span><strong>Smart Auto-Replies</strong><span>Keyword-based instant replies</span></div>
+      <div class="prem-card"><span class="prem-num">02</span><strong>Drip Campaigns</strong><span>Multi-step timed message series</span></div>
+      <div class="prem-card"><span class="prem-num">03</span><strong>Saved Segments</strong><span>Custom user groups for targeting</span></div>
+      <div class="prem-card"><span class="prem-num">04</span><strong>Webhook Log</strong><span>Flow webhook call history</span></div>
+      <div class="prem-card"><span class="prem-num">05</span><strong>A/B Split</strong><span>Split traffic between 2 flows</span></div>
+      <div class="prem-card"><span class="prem-num">06</span><strong>Spam Shield</strong><span>Block spam keywords &amp; links</span></div>
+      <div class="prem-card"><span class="prem-num">07</span><strong>Quiet Hours</strong><span>Pause auto-replies at night</span></div>
+      <div class="prem-card"><span class="prem-num">08</span><strong>Inactive Nudge</strong><span>Re-engage inactive users</span></div>
+      <div class="prem-card"><span class="prem-num">09</span><strong>AI Flow Generator</strong><span>Create flows from description</span></div>
+      <div class="prem-card"><span class="prem-num">10</span><strong>Analytics CSV</strong><span>Export stats to spreadsheet</span></div>
+    </div>
+
+    <div class="card" style="border-color:rgba(191,90,242,.35)">
+      <div class="sh"><div class="st" style="color:var(--p)">01 · SMART AUTO-REPLIES</div><button class="btn bsu bsm" onclick="premAddAutoReply()">+ Rule</button></div>
+      <p style="font-size:11px;color:var(--td);margin-bottom:10px">Jab user keyword bheje (exact/contains/startswith) — turant reply.</p>
+      <div id="prem-autoreplies"></div>
+    </div>
+
+    <div class="card" style="border-color:rgba(0,245,255,.35)">
+      <div class="sh"><div class="st" style="color:var(--c)">02 · DRIP CAMPAIGNS</div><button class="btn bsu bsm" onclick="premAddDrip()">+ Campaign</button></div>
+      <p style="font-size:11px;color:var(--td);margin-bottom:10px">/start par enroll — har step X hours baad message. Cron chalao (Tools panel).</p>
+      <div id="prem-drips"></div>
+    </div>
+
+    <div class="card">
+      <div class="sh"><div class="st">03 · SAVED SEGMENTS</div><button class="btn bsu bsm" onclick="premAddSegment()">+ Segment</button></div>
+      <div id="prem-segments"></div>
+    </div>
+
+    <div class="card" style="border-color:rgba(255,214,10,.35)">
+      <div class="sh"><div class="st" style="color:var(--y)">04 · WEBHOOK LOG</div>
+        <div style="display:flex;gap:6px"><button class="btn bg bsm" onclick="loadWebhookLogs()">🔄</button><button class="btn bd bsm" onclick="clearWebhookLogs()">Clear</button></div>
+      </div>
+      <div class="fg mb"><div class="fgrp"><label class="fl">Log Enabled</label><select id="prem-wh-log" class="fsel"><option value="1">On</option><option value="0">Off</option></select></div></div>
+      <div class="log-t" id="prem-wh-logs" style="max-height:220px">Loading...</div>
+    </div>
+
+    <div class="card">
+      <div class="sh"><div class="st">05 · A/B SPLIT TESTS</div><button class="btn bsu bsm" onclick="premAddAb()">+ Split</button></div>
+      <div id="prem-ab"></div>
+    </div>
+
+    <div class="card" style="border-color:rgba(255,45,85,.35)">
+      <div class="sh"><div class="st" style="color:var(--r)">06 · SPAM SHIELD</div></div>
+      <div class="fg mb">
+        <div class="fgrp"><label class="fl">Enable</label><select id="prem-spam-en" class="fsel"><option value="0">Off</option><option value="1">On</option></select></div>
+        <div class="fgrp"><label class="fl">Block Links</label><select id="prem-spam-links" class="fsel"><option value="0">Off</option><option value="1">On</option></select></div>
+        <div class="fgrp"><label class="fl">Action</label><select id="prem-spam-act" class="fsel"><option value="block">Block silently</option><option value="warn">Warn user</option><option value="ban">Ban user</option></select></div>
+      </div>
+      <div class="fgrp"><label class="fl">Blocked Keywords (one per line)</label><textarea id="prem-spam-kw" class="fta" rows="3" placeholder="free money&#10;click here"></textarea></div>
+    </div>
+
+    <div class="card">
+      <div class="sh"><div class="st">07 · QUIET HOURS</div></div>
+      <div class="fg mb">
+        <div class="fgrp"><label class="fl">Enable</label><select id="prem-qh-en" class="fsel"><option value="0">Off</option><option value="1">On</option></select></div>
+        <div class="fgrp"><label class="fl">Start (24h)</label><input type="text" id="prem-qh-start" class="fi" value="22:00" placeholder="22:00"></div>
+        <div class="fgrp"><label class="fl">End (24h)</label><input type="text" id="prem-qh-end" class="fi" value="08:00" placeholder="08:00"></div>
+        <div class="fgrp"><label class="fl">Timezone</label><input type="text" id="prem-qh-tz" class="fi" value="Asia/Kolkata"></div>
+      </div>
+      <div class="fgrp"><label class="fl">Offline Message</label><textarea id="prem-qh-msg" class="fta" rows="2"></textarea></div>
+    </div>
+
+    <div class="card" style="border-color:rgba(57,255,20,.35)">
+      <div class="sh"><div class="st" style="color:var(--g)">08 · INACTIVE USER NUDGE</div></div>
+      <div class="fg mb">
+        <div class="fgrp"><label class="fl">Enable (cron)</label><select id="prem-nudge-en" class="fsel"><option value="0">Off</option><option value="1">On</option></select></div>
+        <div class="fgrp"><label class="fl">Inactive Days</label><input type="number" id="prem-nudge-days" class="fi" value="7" min="1"></div>
+        <div class="fgrp"><label class="fl">Last Run</label><input type="text" id="prem-nudge-last" class="fi" readonly style="opacity:.7"></div>
+      </div>
+      <div class="fgrp mb"><label class="fl">Nudge Message</label><textarea id="prem-nudge-msg" class="fta" rows="2"></textarea></div>
+    </div>
+
+    <div class="card" style="border-color:rgba(191,90,242,.35)">
+      <div class="sh"><div class="st" style="color:var(--p)">09 · AI FLOW GENERATOR</div></div>
+      <p style="font-size:11px;color:var(--td);margin-bottom:10px">Describe karo — flow auto-create hoga. Keywords: api, browser, free reply.</p>
+      <div class="fg mb">
+        <div class="fgrp" style="grid-column:1/-1"><label class="fl">Prompt</label><textarea id="prem-ai-prompt" class="fta" rows="2" placeholder="User search API flow with loading message"></textarea></div>
+      </div>
+      <button class="btn bp" onclick="generateAiFlow()">✨ Generate Flow</button>
+    </div>
+
+    <div class="card">
+      <div class="sh"><div class="st">10 · ANALYTICS CSV EXPORT</div><button class="btn bo bsm" onclick="exportAnalyticsCsv()">📥 Download CSV</button></div>
+      <p style="font-size:11px;color:var(--td)">Daily stats + per-flow hit counts — Excel/Google Sheets mein open karo.</p>
     </div>
   </div>
 
@@ -8619,7 +8982,7 @@ function setActiveBotName(name){
   if(g('abN'))g('abN').textContent=name;
   if(g('topBotName'))g('topBotName').textContent=name;
 }
-const NAV_LABELS={dash:'Dashboard',analytics:'Analytics',security:'Security Pro',tools:'Tools & Backup',bots:'Manage Bots',cfg:'Bot Config & Security',fj:'Force Join',welcome:'Welcome Message',tagger:'User Tagger',broadcast:'Broadcast',vault:'API Key Vault',bvars:'Bot Variables',dvars:'Live Variables',builder:'Flow Builder',users:'Users',ukeys:'User Keys',lkeys:'Licence Keys',keygen:'Key Gen',guide:'Full Guide',stickers:'Sticker Library',forwards:'Forward Library',premoji:'Premium Emoji',apkrenamer:'APK Renamer',rosebot:'The Rebel Bot',hiddeneye:'Hidden Eye Bot',promobot:'Promo Bot',linkautomation:'Link Automation',depositbot:'Deposit Bot',linkrunner:'Link Runner',adharbot:'Aadhaar Bot'};
+const NAV_LABELS={dash:'Dashboard',analytics:'Analytics',premium:'Premium Hub',security:'Security Pro',tools:'Tools & Backup',bots:'Manage Bots',cfg:'Bot Config & Security',fj:'Force Join',welcome:'Welcome Message',tagger:'User Tagger',broadcast:'Broadcast',vault:'API Key Vault',bvars:'Bot Variables',dvars:'Live Variables',builder:'Flow Builder',users:'Users',ukeys:'User Keys',lkeys:'Licence Keys',keygen:'Key Gen',guide:'Full Guide',stickers:'Sticker Library',forwards:'Forward Library',premoji:'Premium Emoji',apkrenamer:'APK Renamer',rosebot:'The Rebel Bot',hiddeneye:'Hidden Eye Bot',promobot:'Promo Bot',linkautomation:'Link Automation',depositbot:'Deposit Bot',linkrunner:'Link Runner',adharbot:'Aadhaar Bot'};
 const CMD_ITEMS=Object.entries(NAV_LABELS).map(([id,label])=>({id,label,icon:({dash:'📊',bots:'🤖',cfg:'⚙️',builder:'🚀',users:'👥',broadcast:'📣',rosebot:'🔥'}[id]||'▸')}));
 let cmdSel=0;
 function setBreadcrumb(id){const el=g('topCrumb');if(el)el.textContent=NAV_LABELS[id]||id;}
@@ -8691,7 +9054,7 @@ function nav(id,btn){
   panel.classList.add('active');if(btn)btn.classList.add('active');closeSb();
   setBreadcrumb(id);
   scrollPanelTop(id);
-  const m={dash:()=>{loadDash();checkBot();loadLogs();},analytics:loadAnalytics,security:loadSecurity,tools:loadTools,bots:loadBots,users:loadUsers,ukeys:loadUK,lkeys:loadLK,builder:loadPages,cfg:loadCfg,vault:loadVault,bvars:loadBV,dvars:loadDynVars,fj:loadFj,broadcast:()=>{dmLoadStickers();dmLoadEmojis();dmsLoadStickers();dmsLoadEmojis();loadSchedJobs();},guide:()=>{},stickers:refreshStickers,forwards:refreshForwards,welcome:loadWelcome,tagger:()=>{loadTagger();utLoadEmojiPicker();},hiddeneye:loadHiddenEye,apkrenamer:apkrLoad,promobot:promoLoad,rosebot:roseLoad,linkautomation:laLoad,depositbot:rbdInit,linkrunner:lrInit,adharbot:adharBotInit};
+  const m={dash:()=>{loadDash();checkBot();loadLogs();},analytics:loadAnalytics,premium:loadPremium,security:loadSecurity,tools:loadTools,bots:loadBots,users:loadUsers,ukeys:loadUK,lkeys:loadLK,builder:loadPages,cfg:loadCfg,vault:loadVault,bvars:loadBV,dvars:loadDynVars,fj:loadFj,broadcast:()=>{dmLoadStickers();dmLoadEmojis();dmsLoadStickers();dmsLoadEmojis();loadSchedJobs();},guide:()=>{},stickers:refreshStickers,forwards:refreshForwards,welcome:loadWelcome,tagger:()=>{loadTagger();utLoadEmojiPicker();},hiddeneye:loadHiddenEye,apkrenamer:apkrLoad,promobot:promoLoad,rosebot:roseLoad,linkautomation:laLoad,depositbot:rbdInit,linkrunner:lrInit,adharbot:adharBotInit};
   const run=m[id];
   if(run){
     let ret;
@@ -10119,6 +10482,144 @@ async function loadBrowserDebug(){
   if(!r.ok||!r.data?.length){b.innerHTML='<div style="color:var(--td)">No browser runs logged yet.</div>';return;}
   b.innerHTML=r.data.map(x=>`<div style="margin-bottom:6px"><span style="color:var(--tf)">[${new Date(x.time).toLocaleString()}]</span> <span style="color:var(--${x.status==='done'?'g':x.status==='error'?'r':'y'})">${x.status}</span> page=${x.page} user=${x.user}${x.error?' err='+x.error:''}</div>`).join('');
 }
+
+// ═══ PREMIUM HUB (10 features) ═══
+let _premData=null,_premPages=[];
+function premEsc(s){return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');}
+function premPageOpts(sel){return (_premPages||[]).map(p=>`<option value="${premEsc(p.id)}"${p.id===sel?' selected':''}>/${premEsc(p.trigger||'free')} · ${premEsc(p.type)}</option>`).join('');}
+function premSegOpts(sel){const built=[['all','All users'],['active7','Active 7 days'],['has_key','Has key'],['no_key','No key']];let h=built.map(([id,l])=>`<option value="${id}"${id===sel?' selected':''}>${l}</option>`).join('');(_premData?.saved_segments||[]).forEach(s=>{h+=`<option value="${premEsc(s.id)}"${s.id===sel?' selected':''}>${premEsc(s.name||s.id)}</option>`;});return h;}
+
+async function loadPremium(){
+  const r=await api('get_premium_settings');if(!r.ok)return toast(r.error||'Error','error');
+  _premData=r.data||{};_premPages=r.pages||[];
+  renderPremAutoReplies();renderPremDrips();renderPremSegments();renderPremAb();
+  if(g('prem-wh-log'))g('prem-wh-log').value=_premData.webhook_log?.enabled!==false?'1':'0';
+  const ss=_premData.spam_shield||{};
+  if(g('prem-spam-en'))g('prem-spam-en').value=ss.enabled?'1':'0';
+  if(g('prem-spam-links'))g('prem-spam-links').value=ss.block_links?'1':'0';
+  if(g('prem-spam-act'))g('prem-spam-act').value=ss.action||'block';
+  if(g('prem-spam-kw'))g('prem-spam-kw').value=(ss.keywords||[]).join('\n');
+  const qh=_premData.quiet_hours||{};
+  if(g('prem-qh-en'))g('prem-qh-en').value=qh.enabled?'1':'0';
+  if(g('prem-qh-start'))g('prem-qh-start').value=qh.start||'22:00';
+  if(g('prem-qh-end'))g('prem-qh-end').value=qh.end||'08:00';
+  if(g('prem-qh-tz'))g('prem-qh-tz').value=qh.tz||'Asia/Kolkata';
+  if(g('prem-qh-msg'))g('prem-qh-msg').value=qh.message||'';
+  const nu=_premData.inactive_nudge||{};
+  if(g('prem-nudge-en'))g('prem-nudge-en').value=nu.enabled?'1':'0';
+  if(g('prem-nudge-days'))g('prem-nudge-days').value=nu.days||7;
+  if(g('prem-nudge-msg'))g('prem-nudge-msg').value=nu.message||'';
+  if(g('prem-nudge-last'))g('prem-nudge-last').value=nu.last_run?new Date(nu.last_run).toLocaleString():'Never';
+  loadWebhookLogs();
+}
+function renderPremAutoReplies(){
+  const el=g('prem-autoreplies');if(!el)return;
+  const list=_premData.auto_replies||[];
+  if(!list.length){el.innerHTML='<div style="color:var(--td);font-size:12px">No rules — click + Rule</div>';return;}
+  el.innerHTML=list.map((ar,i)=>`<div class="prem-row" data-i="${i}">
+    <div class="prem-row-h"><strong>${premEsc(ar.keyword||'—')}</strong><button class="btn bd bsm" onclick="premDelAutoReply(${i})">✕</button></div>
+    <div class="fg"><div class="fgrp"><label class="fl">Keyword</label><input class="fi prem-ar-kw" value="${premEsc(ar.keyword)}"></div>
+    <div class="fgrp"><label class="fl">Match</label><select class="fsel prem-ar-match"><option value="contains"${ar.match==='contains'?' selected':''}>Contains</option><option value="exact"${ar.match==='exact'?' selected':''}>Exact</option><option value="startswith"${ar.match==='startswith'?' selected':''}>Starts with</option></select></div>
+    <div class="fgrp"><label class="fl">On</label><select class="fsel prem-ar-en"><option value="1"${ar.enabled!==false?' selected':''}>Yes</option><option value="0"${ar.enabled===false?' selected':''}>No</option></select></div></div>
+    <div class="fgrp mt"><label class="fl">Reply (HTML)</label><textarea class="fta prem-ar-reply" rows="2">${premEsc(ar.reply)}</textarea></div>
+  </div>`).join('');
+}
+function renderPremDrips(){
+  const el=g('prem-drips');if(!el)return;
+  const list=_premData.drip_campaigns||[];
+  if(!list.length){el.innerHTML='<div style="color:var(--td);font-size:12px">No campaigns yet</div>';return;}
+  el.innerHTML=list.map((d,i)=>`<div class="prem-row" data-i="${i}">
+    <div class="prem-row-h"><strong>${premEsc(d.name||'Campaign')}</strong><span style="font-size:10px;color:var(--td)">${Object.keys(d.enrolled||{}).length} enrolled</span><button class="btn bd bsm" onclick="premDelDrip(${i})">✕</button></div>
+    <div class="fg mb"><div class="fgrp"><label class="fl">Name</label><input class="fi prem-dr-name" value="${premEsc(d.name)}"></div>
+    <div class="fgrp"><label class="fl">Segment</label><select class="fsel prem-dr-seg">${premSegOpts(d.segment||'all')}</select></div>
+    <div class="fgrp"><label class="fl">Enabled</label><select class="fsel prem-dr-en"><option value="1"${d.enabled?' selected':''}>Yes</option><option value="0"${!d.enabled?' selected':''}>No</option></select></div></div>
+    <div class="prem-dr-steps">${(d.steps||[]).map((st,si)=>`<div class="fg mb" style="border-left:2px solid var(--c);padding-left:8px"><div class="fgrp"><label class="fl">Step ${si+1} delay (hours)</label><input type="number" class="fi prem-dr-delay" data-si="${si}" value="${st.delay_hours||0}" min="0"></div>
+    <div class="fgrp" style="grid-column:1/-1"><label class="fl">Message</label><textarea class="fta prem-dr-msg" data-si="${si}" rows="2">${premEsc(st.message)}</textarea></div></div>`).join('')}</div>
+    <button class="btn bg bsm" onclick="premAddDripStep(${i})">+ Step</button>
+  </div>`).join('');
+}
+function renderPremSegments(){
+  const el=g('prem-segments');if(!el)return;
+  const list=_premData.saved_segments||[];
+  if(!list.length){el.innerHTML='<div style="color:var(--td);font-size:12px">No custom segments</div>';return;}
+  el.innerHTML=list.map((s,i)=>`<div class="prem-row" data-i="${i}">
+    <div class="prem-row-h"><strong>${premEsc(s.name||s.id)}</strong><button class="btn bg bsm" onclick="premCountSeg('${premEsc(s.id)}')">Count</button><button class="btn bd bsm" onclick="premDelSegment(${i})">✕</button></div>
+    <div class="fg"><div class="fgrp"><label class="fl">Name</label><input class="fi prem-sg-name" value="${premEsc(s.name)}"></div>
+    <div class="fgrp"><label class="fl">Active last N days</label><input type="number" class="fi prem-sg-active" value="${s.rules?.active_days||''}" placeholder="optional"></div>
+    <div class="fgrp"><label class="fl">Inactive N+ days</label><input type="number" class="fi prem-sg-inactive" value="${s.rules?.inactive_days||''}" placeholder="optional"></div>
+    <div class="fgrp"><label class="fl">Min searches</label><input type="number" class="fi prem-sg-min" value="${s.rules?.min_searches||''}" placeholder="optional"></div></div>
+  </div>`).join('');
+}
+function renderPremAb(){
+  const el=g('prem-ab');if(!el)return;
+  const list=_premData.ab_splits||[];
+  if(!list.length){el.innerHTML='<div style="color:var(--td);font-size:12px">No A/B tests</div>';return;}
+  el.innerHTML=list.map((ab,i)=>`<div class="prem-row" data-i="${i}">
+    <div class="prem-row-h"><strong>/${premEsc(ab.trigger||'—')}</strong><button class="btn bd bsm" onclick="premDelAb(${i})">✕</button></div>
+    <div class="fg"><div class="fgrp"><label class="fl">Command trigger</label><input class="fi prem-ab-trig" value="${premEsc(ab.trigger)}"></div>
+    <div class="fgrp"><label class="fl">Flow A</label><select class="fsel prem-ab-a">${premPageOpts(ab.page_a)}</select></div>
+    <div class="fgrp"><label class="fl">Flow B</label><select class="fsel prem-ab-b">${premPageOpts(ab.page_b)}</select></div>
+    <div class="fgrp"><label class="fl">A ratio %</label><input type="number" class="fi prem-ab-ratio" value="${ab.ratio??50}" min="1" max="99"></div>
+    <div class="fgrp"><label class="fl">Enabled</label><select class="fsel prem-ab-en"><option value="1"${ab.enabled!==false?' selected':''}>Yes</option><option value="0"${ab.enabled===false?' selected':''}>No</option></select></div></div>
+  </div>`).join('');
+}
+function premAddAutoReply(){if(!_premData)_premData={};if(!_premData.auto_replies)_premData.auto_replies=[];_premData.auto_replies.push({id:'ar_'+Date.now(),keyword:'hello',match:'contains',reply:'👋 Hi {tg_name}!',enabled:true});renderPremAutoReplies();}
+function premDelAutoReply(i){_premData.auto_replies.splice(i,1);renderPremAutoReplies();}
+function premAddDrip(){if(!_premData)_premData={};if(!_premData.drip_campaigns)_premData.drip_campaigns=[];_premData.drip_campaigns.push({id:'dr_'+Date.now(),name:'Welcome Series',enabled:true,segment:'all',steps:[{delay_hours:0,message:'👋 Welcome!'},{delay_hours:24,message:'💡 Tip: /help try karo'}],enrolled:{}});renderPremDrips();}
+function premDelDrip(i){_premData.drip_campaigns.splice(i,1);renderPremDrips();}
+function premAddDripStep(i){_premData.drip_campaigns[i].steps.push({delay_hours:48,message:''});renderPremDrips();}
+function premAddSegment(){if(!_premData)_premData={};if(!_premData.saved_segments)_premData.saved_segments=[];_premData.saved_segments.push({id:'seg_'+Date.now(),name:'VIP Users',rules:{active_days:7,min_searches:1}});renderPremSegments();}
+function premDelSegment(i){_premData.saved_segments.splice(i,1);renderPremSegments();}
+async function premCountSeg(id){const r=await api('preview_segment_count',{segment:id});if(r.ok)toast('Users in segment: '+r.count,'success');else toast(r.error||'Error','error');}
+function premAddAb(){if(!_premData)_premData={};if(!_premData.ab_splits)_premData.ab_splits=[];_premData.ab_splits.push({id:'ab_'+Date.now(),trigger:'test',page_a:_premPages[0]?.id||'',page_b:_premPages[1]?.id||'',ratio:50,enabled:true});renderPremAb();}
+function premDelAb(i){_premData.ab_splits.splice(i,1);renderPremAb();}
+function collectPremiumFromUi(){
+  const p=JSON.parse(JSON.stringify(_premData||{}));
+  p.auto_replies=[];document.querySelectorAll('#prem-autoreplies .prem-row').forEach(row=>{
+    p.auto_replies.push({id:'ar_'+Math.random().toString(36).slice(2),keyword:row.querySelector('.prem-ar-kw')?.value||'',match:row.querySelector('.prem-ar-match')?.value||'contains',reply:row.querySelector('.prem-ar-reply')?.value||'',enabled:row.querySelector('.prem-ar-en')?.value==='1'});
+  });
+  p.drip_campaigns=(p.drip_campaigns||[]).map((d,di)=>{
+    const row=document.querySelector(`#prem-drips .prem-row[data-i="${di}"]`);
+    if(!row)return d;
+    const steps=[];row.querySelectorAll('.prem-dr-delay').forEach(inp=>{const si=inp.dataset.si;steps[si]=steps[si]||{};steps[si].delay_hours=parseInt(inp.value)||0;});
+    row.querySelectorAll('.prem-dr-msg').forEach(ta=>{const si=ta.dataset.si;steps[si]=steps[si]||{};steps[si].message=ta.value;});
+    return{id:d.id,name:row.querySelector('.prem-dr-name')?.value||d.name,enabled:row.querySelector('.prem-dr-en')?.value==='1',segment:row.querySelector('.prem-dr-seg')?.value||'all',steps:steps.filter(Boolean),enrolled:d.enrolled||{}};
+  });
+  p.saved_segments=[];document.querySelectorAll('#prem-segments .prem-row').forEach((row,i)=>{
+    const orig=_premData.saved_segments?.[i]||{};
+    p.saved_segments.push({id:orig.id||('seg_'+Date.now()),name:row.querySelector('.prem-sg-name')?.value||'',rules:{active_days:parseInt(row.querySelector('.prem-sg-active')?.value)||0||null,inactive_days:parseInt(row.querySelector('.prem-sg-inactive')?.value)||0||null,min_searches:parseInt(row.querySelector('.prem-sg-min')?.value)||0||null}});
+  });
+  p.ab_splits=[];document.querySelectorAll('#prem-ab .prem-row').forEach((row,i)=>{
+    const orig=_premData.ab_splits?.[i]||{};
+    p.ab_splits.push({id:orig.id||('ab_'+Date.now()),trigger:row.querySelector('.prem-ab-trig')?.value||'',page_a:row.querySelector('.prem-ab-a')?.value||'',page_b:row.querySelector('.prem-ab-b')?.value||'',ratio:parseInt(row.querySelector('.prem-ab-ratio')?.value)||50,enabled:row.querySelector('.prem-ab-en')?.value==='1'});
+  });
+  p.webhook_log={enabled:g('prem-wh-log')?.value==='1',max:150};
+  p.spam_shield={enabled:g('prem-spam-en')?.value==='1',block_links:g('prem-spam-links')?.value==='1',action:g('prem-spam-act')?.value||'block',keywords:(g('prem-spam-kw')?.value||'').split('\n').map(s=>s.trim()).filter(Boolean)};
+  p.quiet_hours={enabled:g('prem-qh-en')?.value==='1',start:g('prem-qh-start')?.value||'22:00',end:g('prem-qh-end')?.value||'08:00',tz:g('prem-qh-tz')?.value||'Asia/Kolkata',message:g('prem-qh-msg')?.value||''};
+  p.inactive_nudge={...(_premData?.inactive_nudge||{}),enabled:g('prem-nudge-en')?.value==='1',days:parseInt(g('prem-nudge-days')?.value)||7,message:g('prem-nudge-msg')?.value||''};
+  return p;
+}
+async function savePremiumAll(){
+  const premium=collectPremiumFromUi();
+  const r=await api('save_premium_settings',{premium});
+  if(r.ok){toast('Premium settings saved!','success');_premData=premium;loadPremium();}else toast(r.error||'Error','error');
+}
+async function loadWebhookLogs(){
+  const r=await api('get_webhook_logs');const el=g('prem-wh-logs');if(!el)return;
+  if(!r.ok||!r.data?.length){el.innerHTML='<div style="color:var(--td);font-size:12px">No webhook calls logged yet.</div>';return;}
+  el.innerHTML=r.data.map(x=>`<div style="margin-bottom:5px;font-size:11px"><span style="color:var(--tf)">[${new Date(x.time).toLocaleString()}]</span> flow=<b style="color:var(--c)">${premEsc(x.flow)}</b> chat=${premEsc(x.chat_id)} q=${premEsc((x.query||'').slice(0,40))}</div>`).join('');
+}
+async function clearWebhookLogs(){if(!confirm('Clear all webhook logs?'))return;const r=await api('clear_webhook_logs');if(r.ok){toast('Cleared','success');loadWebhookLogs();}else toast(r.error||'Error','error');}
+async function generateAiFlow(){
+  const prompt=g('prem-ai-prompt')?.value?.trim();if(!prompt)return toast('Enter a prompt','warn');
+  const r=await api('generate_ai_flow',{prompt});
+  if(r.ok){toast('Flow created: /'+(r.page?.trigger||r.page?.id),'success');if(g('prem-ai-prompt'))g('prem-ai-prompt').value='';loadPremium();navQuick('builder');}else toast(r.error||'Error','error');
+}
+async function exportAnalyticsCsv(){
+  const r=await api('export_analytics_csv');if(!r.ok)return toast(r.error||'Error','error');
+  const blob=new Blob([r.csv],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=r.filename||'analytics.csv';a.click();toast('CSV downloaded!','success');
+}
+
 async function loadSecurity(){
   const[r,t,a]=await Promise.all([api('get_admin_settings'),api('list_api_tokens'),api('get_audit_log')]);
   if(r.ok&&r.data){
