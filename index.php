@@ -4251,7 +4251,26 @@ if($page==='api'){
         case 'stop_bot':tg('deleteWebhook',[],$TOK);addLog($actId,'Engine Stopped','warn');jout(['ok'=>true]);break;
         case 'get_stats':
             jout(['ok'=>true,'data'=>['users'=>count($db['users']),'searches'=>$db['stats']['searches']??0,'cmds'=>$db['stats']['cmds']??0,'keys'=>count($db['ukeys'])+count($db['lkeys'])]]);break;
-        case 'get_users':jout(['ok'=>true,'data'=>array_values($db['users'])]);break;
+        case 'get_users':
+            $uPage=max(1,(int)($body['page']??1));
+            $uLimit=max(10,min(100,(int)($body['limit']??50)));
+            $uSearch=trim($body['search']??'');
+            $allUsers=array_values($db['users']??[]);
+            usort($allUsers,fn($a,$b)=>strcmp($b['joined']??'',$a['joined']??''));
+            if($uSearch!==''){
+                $uq=strtolower($uSearch);
+                $allUsers=array_values(array_filter($allUsers,static function($u)use($uq){
+                    return str_contains(strtolower($u['name']??''),$uq)
+                        || str_contains(strtolower($u['username']??''),$uq)
+                        || str_contains((string)($u['id']??''),$uq)
+                        || str_contains(strtolower($u['key']??''),$uq);
+                }));
+            }
+            $uTotal=count($allUsers);
+            $uPages=max(1,(int)ceil($uTotal/$uLimit));
+            if($uPage>$uPages)$uPage=$uPages;
+            $uSlice=array_slice($allUsers,($uPage-1)*$uLimit,$uLimit);
+            jout(['ok'=>true,'data'=>$uSlice,'total'=>$uTotal,'page'=>$uPage,'pages'=>$uPages,'limit'=>$uLimit]);break;
         case 'delete_user':unset($db['users'][$body['uid']]);saveDB($actId,$db);jout(['ok'=>true]);break;
         case 'ban_user':$db['users'][$body['uid']]['banned']=true;saveDB($actId,$db);jout(['ok'=>true]);break;
         case 'unban_user':$db['users'][$body['uid']]['banned']=false;saveDB($actId,$db);jout(['ok'=>true]);break;
@@ -5938,7 +5957,7 @@ td{padding:9px 11px;vertical-align:middle;}
 
   <!-- USERS -->
 
-  <div class="panel" id="p-users"><div class="card"><div class="sh"><div class="st">👥 USERS</div><button class="btn bg bsm" onclick="loadUsers()">🔄</button></div><div class="tr"><div class="tw"><table><thead><tr><th>Name</th><th>ID</th><th>Searches</th><th>Key</th><th>Status</th><th>Action</th></tr></thead><tbody id="ub"></tbody></table></div></div></div></div>
+  <div class="panel" id="p-users"><div class="card"><div class="sh"><div class="st">👥 USERS <span id="users-count" style="font-size:11px;color:var(--td)"></span></div><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><input class="fi" id="users-search" placeholder="Search name, ID, username..." style="width:200px;padding:6px 10px;font-size:12px" oninput="usersSearchDebounced()"><button class="btn bg bsm" onclick="loadUsers(1)">🔄</button></div></div><div class="tr"><div class="tw"><table><thead><tr><th>Name</th><th>ID</th><th>Searches</th><th>Key</th><th>Status</th><th>Action</th></tr></thead><tbody id="ub"></tbody></table></div></div><div id="users-pager" style="display:flex;justify-content:space-between;align-items:center;padding:10px 0 0;gap:8px;flex-wrap:wrap"></div></div></div>
 
   <!-- USER KEYS -->
 
@@ -7520,7 +7539,36 @@ async function loadBots(){
 }
 async function addBot(){const t=g('abt').value.trim();if(!t)return;toast('Verifying...','info');const r=await api('add_bot',{token:t});if(r.ok){toast('✅ Bot Added!','success');closeModal('m-ab');g('abt').value='';loadBots();}else toast('Error: '+(r.error||'Invalid token'),'error');}
 
-async function loadUsers(){const r=await api('get_users');const b=g('ub');b.innerHTML='';if(!r.data?.length){b.innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--td);padding:16px">No users yet</td></tr>';return;}r.data.forEach(u=>{b.innerHTML+=`<tr><td><b>${u.name||'?'}</b></td><td style="font-size:11px;color:var(--td)">${u.id}</td><td style="color:var(--c)">${u.searchesLeft==999999?'∞':u.searchesLeft||0}</td><td><code style="color:var(--c);font-size:11px">${u.key||'—'}</code></td><td><span class="badge ${u.banned?'bi':'ba'}">${u.banned?'BANNED':'Active'}</span></td><td>${u.banned?`<button class="btn bsu bsm" onclick="api('unban_user',{uid:'${u.id}'}).then(loadUsers)">Unban</button>`:`<button class="btn bd bsm" onclick="api('ban_user',{uid:'${u.id}'}).then(loadUsers)">Ban</button>`} <button class="btn bg bsm" onclick="if(confirm('Delete?'))api('delete_user',{uid:'${u.id}'}).then(loadUsers)">Del</button></td></tr>`;});}
+let _usersPage=1,_usersSearchTimer=null;
+function usersEsc(s){return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');}
+function usersSearchDebounced(){clearTimeout(_usersSearchTimer);_usersSearchTimer=setTimeout(()=>loadUsers(1),350);}
+function renderUsersPager(total,page,pages){
+  const p=g('users-pager');if(!p)return;
+  if(!total){p.innerHTML='';return;}
+  if(total<=50&&pages<=1){p.innerHTML=`<span style="font-size:11px;color:var(--td)">${total} user(s)</span>`;return;}
+  p.innerHTML=`<span style="font-size:11px;color:var(--td)">Page ${page}/${pages} · ${total} users</span><div style="display:flex;gap:6px"><button class="btn bg bsm" onclick="loadUsers(${page-1})" ${page<=1?'disabled style="opacity:.4;cursor:not-allowed"':''}>◀ Prev</button><button class="btn bg bsm" onclick="loadUsers(${page+1})" ${page>=pages?'disabled style="opacity:.4;cursor:not-allowed"':''}>Next ▶</button></div>`;
+}
+async function loadUsers(page){
+  if(page!==undefined)_usersPage=Math.max(1,page);
+  const b=g('ub');if(!b)return;
+  const search=(g('users-search')?.value||'').trim();
+  b.innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--td);padding:16px">Loading...</td></tr>';
+  const r=await api('get_users',{page:_usersPage,limit:50,search});
+  const cnt=g('users-count');
+  if(!r.ok){b.innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--r);padding:16px">Failed to load users</td></tr>';renderUsersPager(0,1,1);if(cnt)cnt.textContent='';return;}
+  const total=r.total||0;
+  if(cnt)cnt.textContent=total?`(${total})`:'';
+  if(!r.data?.length){b.innerHTML=`<tr><td colspan="6" style="text-align:center;color:var(--td);padding:16px">${search?'No users match search':'No users yet'}</td></tr>`;renderUsersPager(total,r.page||1,r.pages||1);return;}
+  b.innerHTML=r.data.map(u=>{
+    const id=usersEsc(u.id);
+    const name=usersEsc(u.name||'?');
+    const key=usersEsc(u.key||'—');
+    const left=u.searchesLeft==999999?'∞':(u.searchesLeft||0);
+    const banBtn=u.banned?`<button class="btn bsu bsm" onclick="api('unban_user',{uid:'${id}'}).then(()=>loadUsers(_usersPage))">Unban</button>`:`<button class="btn bd bsm" onclick="api('ban_user',{uid:'${id}'}).then(()=>loadUsers(_usersPage))">Ban</button>`;
+    return `<tr><td><b>${name}</b>${u.username?`<div style="font-size:10px;color:var(--td)">@${usersEsc(u.username)}</div>`:''}</td><td style="font-size:11px;color:var(--td)">${id}</td><td style="color:var(--c)">${left}</td><td><code style="color:var(--c);font-size:11px">${key}</code></td><td><span class="badge ${u.banned?'bi':'ba'}">${u.banned?'BANNED':'Active'}</span></td><td>${banBtn} <button class="btn bg bsm" onclick="if(confirm('Delete?'))api('delete_user',{uid:'${id}'}).then(()=>loadUsers(_usersPage))">Del</button></td></tr>`;
+  }).join('');
+  renderUsersPager(total,r.page||1,r.pages||1);
+}
 async function loadUK(){const r=await api('get_ukeys');const b=g('ukb');b.innerHTML='';if(!r.data?.length){b.innerHTML='<tr><td colspan="5" style="text-align:center;color:var(--td);padding:12px">None</td></tr>';return;}r.data.forEach(k=>b.innerHTML+=`<tr><td style="color:var(--c);font-family:'Share Tech Mono';font-size:11px">${k.key}</td><td>${k.searches}</td><td style="font-size:11px">${k.expires||'Never'}</td><td><span class="badge ${k.status==='active'?'ba':'bi'}">${k.status}</span></td><td><button class="btn bd bsm" onclick="api('delete_ukey',{id:'${k.id}'}).then(loadUK)">Del</button></td></tr>`);}
 async function loadLK(){const r=await api('get_lkeys');const b=g('lkb');b.innerHTML='';if(!r.data?.length){b.innerHTML='<tr><td colspan="5" style="text-align:center;color:var(--td);padding:12px">None</td></tr>';return;}r.data.forEach(k=>b.innerHTML+=`<tr><td style="color:var(--c);font-family:'Share Tech Mono';font-size:11px">${k.key}</td><td><span class="badge bc">${k.tier||'STD'}</span></td><td>${k.searches}</td><td><span class="badge ${k.status==='active'?'ba':'bi'}">${k.status}</span></td><td><button class="btn bd bsm" onclick="api('delete_lkey',{id:'${k.id}'}).then(loadLK)">Del</button></td></tr>`);}
 async function genKeys(){const r=await api('gen_keys',{type:g('kg-t').value,tier:'STD',searches:parseInt(g('kg-s').value)||100,days:30,qty:parseInt(g('kg-q').value)||1});if(r.ok){toast(r.keys.length+' key(s) generated!','success');g('kg-out').innerHTML=`<div style="background:var(--s2);border:1px solid var(--b);border-radius:8px;padding:10px">${r.keys.map(k=>`<div style="color:var(--c);font-family:'Share Tech Mono';font-size:13px;padding:4px;cursor:pointer" onclick="navigator.clipboard.writeText('${k}');toast('Copied!','success')">${k}</div>`).join('')}</div>`;if(g('kg-t').value==='LIC')loadLK();else loadUK();}else toast('Error','error');}
