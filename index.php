@@ -5204,7 +5204,8 @@ body.admin-app .wrap{height:100dvh;min-height:100dvh;overflow:hidden;}
 body.admin-app .main{height:100dvh;min-height:100dvh;overflow:hidden;display:flex;flex-direction:column;}
 .topbar{background:rgba(13,17,23,.95);border-bottom:1px solid var(--b);padding:0 18px;height:52px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:50;flex-shrink:0;}
 .con{padding:18px;flex:1;overflow-x:hidden;padding-top:18px;}
-body.admin-app .con{flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;overflow-anchor:none;}
+body.admin-app .con{flex:1 1 auto;min-height:0;overflow:hidden;padding:0;position:relative;}
+body.admin-app .panel-viewport{position:absolute;inset:0;overflow-y:auto;overflow-x:hidden;padding:18px;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;overflow-anchor:none;}
 .panel{display:none;}.panel.active{display:block;}
 .card{background:var(--s);border:1px solid var(--b);border-radius:12px;padding:16px;margin-bottom:14px;width:100%;}
 .sh{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;}
@@ -5271,6 +5272,7 @@ td{padding:9px 11px;vertical-align:middle;}
   .sov.open{display:block;}
   .main{margin-left:0!important;width:100%!important;min-height:100vh;}
   body.admin-app .main{height:100dvh;min-height:100dvh;overflow:hidden;}
+  body.admin-app .panel-viewport{padding:10px;}
   .ham{display:block;}
   .fg{grid-template-columns:1fr;}
   .con{padding:10px;padding-top:10px;}
@@ -5362,6 +5364,7 @@ td{padding:9px 11px;vertical-align:middle;}
   </div>
 
   <div class="con">
+  <div class="panel-viewport" id="panel-viewport">
 
   <!-- DASHBOARD -->
 
@@ -6801,9 +6804,6 @@ td{padding:9px 11px;vertical-align:middle;}
       <div id="rose-save-result" style="margin-top:10px;display:none"></div>
     </div>
   </div>
-  </div><!-- /con -->
-</div><!-- /main -->
-</div><!-- /wrap -->
 
 <!-- MODALS -->
 
@@ -7639,6 +7639,11 @@ td{padding:9px 11px;vertical-align:middle;}
     </div>
   </div>
 
+  </div><!-- /panel-viewport -->
+  </div><!-- /con -->
+</div><!-- /main -->
+</div><!-- /wrap -->
+
 <?php endif ?>
 
 <script>
@@ -7663,17 +7668,19 @@ function toast(m,t='info'){const d=document.createElement('div');d.className='to
 function openSb(){g('sb').classList.add('open');g('sov').classList.add('open');document.body.style.overflow='hidden';}
 function closeSb(){g('sb').classList.remove('open');g('sov').classList.remove('open');document.body.style.overflow=document.body.classList.contains('admin-app')?'hidden':'';}
 function scrollAppToTop(){
+  const vp=g('panel-viewport');
   const con=document.querySelector('.con');
   const main=document.querySelector('.main');
+  document.querySelectorAll('.panel').forEach(p=>{p.scrollTop=0;});
+  if(vp){vp.scrollTop=0;vp.scrollLeft=0;}
   [con,main,document.documentElement,document.body].forEach(el=>{if(!el)return;el.scrollTop=0;el.scrollLeft=0;});
   window.scrollTo(0,0);
-  const ap=document.querySelector('.panel.active');
-  if(ap)ap.scrollTop=0;
 }
 function nav(id,btn){
-  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.panel').forEach(p=>{p.classList.remove('active');p.scrollTop=0;});
   document.querySelectorAll('.ni').forEach(n=>n.classList.remove('active'));
-  g('p-'+id).classList.add('active');btn.classList.add('active');closeSb();
+  const panel=g('p-'+id);
+  panel.classList.add('active');btn.classList.add('active');closeSb();
   scrollAppToTop();
   requestAnimationFrame(()=>{scrollAppToTop();requestAnimationFrame(scrollAppToTop);});
   const m={dash:()=>{loadDash();checkBot();loadLogs();},bots:loadBots,users:loadUsers,ukeys:loadUK,lkeys:loadLK,builder:loadPages,cfg:loadCfg,vault:loadVault,bvars:loadBV,dvars:loadDynVars,fj:loadFj,broadcast:()=>{dmLoadStickers();dmLoadEmojis();dmsLoadStickers();dmsLoadEmojis();},guide:()=>{},stickers:refreshStickers,forwards:refreshForwards,welcome:loadWelcome,tagger:()=>{loadTagger();utLoadEmojiPicker();},hiddeneye:loadHiddenEye,apkrenamer:apkrLoad,promobot:promoLoad,rosebot:roseLoad,linkautomation:laLoad,depositbot:rbdInit,linkrunner:lrInit,adharbot:adharBotInit};
