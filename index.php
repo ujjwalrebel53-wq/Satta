@@ -5738,6 +5738,62 @@ td{padding:9px 11px;vertical-align:middle;}
 .vpillo{display:inline-block;background:rgba(255,159,10,.1);color:var(--o);padding:2px 7px;border-radius:4px;font-family:'Share Tech Mono';font-size:11px;margin:2px;}
 .ft-opts{display:none;background:rgba(191,90,242,.05);border:1px solid rgba(191,90,242,.3);border-radius:8px;padding:12px;margin-top:10px;}
 .ft-opts.show{display:block!important;}
+
+/* ═══ FLOW BUILDER PRO UX ═══ */
+.fb-hero{background:linear-gradient(135deg,rgba(0,245,255,.08),rgba(191,90,242,.06));border:1px solid rgba(0,245,255,.2);border-radius:14px;padding:16px 18px;margin-bottom:14px;}
+.fb-hero h2{font-family:Orbitron;font-size:15px;color:var(--c);margin:0 0 6px;}
+.fb-hero p{font-size:12px;color:var(--td);margin:0;line-height:1.7;}
+.fb-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:8px;margin-bottom:14px;}
+.fb-stat{background:var(--s2);border:1px solid var(--b);border-radius:10px;padding:12px;text-align:center;transition:.2s;}
+.fb-stat:hover{border-color:rgba(0,245,255,.35);transform:translateY(-1px);}
+.fb-stat-n{font-family:Orbitron;font-size:22px;font-weight:900;color:var(--c);}
+.fb-stat-l{font-size:9px;color:var(--td);font-family:'Share Tech Mono';margin-top:4px;text-transform:uppercase;}
+.fb-toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px;}
+.fb-search{flex:1;min-width:160px;max-width:320px;padding:8px 12px!important;font-size:12px;border-radius:8px;}
+.fb-filter{padding:7px 10px;font-size:11px;border-radius:8px;background:var(--s2);border:1px solid var(--b);color:var(--t);}
+.fb-view-toggle{display:flex;border:1px solid var(--b);border-radius:8px;overflow:hidden;}
+.fb-view-toggle button{background:var(--s2);border:none;color:var(--td);padding:6px 12px;font-size:11px;cursor:pointer;font-family:'Share Tech Mono';}
+.fb-view-toggle button.active{background:rgba(0,245,255,.15);color:var(--c);}
+.fb-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;margin-bottom:14px;}
+.fb-card{background:var(--s2);border:1px solid var(--b);border-radius:12px;padding:14px;transition:.2s;cursor:pointer;position:relative;}
+.fb-card:hover{border-color:rgba(0,245,255,.4);box-shadow:0 4px 20px rgba(0,245,255,.08);}
+.fb-card-top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:8px;}
+.fb-card-id{font-family:'Share Tech Mono';font-size:12px;color:var(--c);font-weight:700;word-break:break-all;}
+.fb-card-trig{font-size:11px;color:var(--td);margin-bottom:10px;}
+.fb-card-tags{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:10px;}
+.fb-card-actions{display:flex;gap:5px;flex-wrap:wrap;}
+.fb-health{font-size:9px;padding:2px 6px;border-radius:4px;font-family:'Share Tech Mono';}
+.fb-health.ok{background:rgba(57,255,20,.12);color:var(--g);}
+.fb-health.warn{background:rgba(255,214,10,.12);color:var(--y);}
+.fb-tabs{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:12px;border-bottom:1px solid var(--b);padding-bottom:8px;}
+.fb-tab{background:transparent;border:1px solid transparent;color:var(--td);padding:7px 14px;border-radius:8px 8px 0 0;font-size:11px;font-family:'Share Tech Mono';cursor:pointer;transition:.15s;}
+.fb-tab:hover{color:var(--t);background:rgba(255,255,255,.03);}
+.fb-tab.active{color:var(--c);background:rgba(0,245,255,.08);border-color:var(--b);border-bottom-color:var(--s);}
+.pb-tab-panel{display:none;animation:panelIn .18s ease;}
+.pb-tab-panel.active{display:block;}
+.fb-type-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(95px,1fr));gap:8px;margin-bottom:12px;}
+.fb-type-card{background:var(--s2);border:2px solid var(--b);border-radius:10px;padding:10px 8px;text-align:center;cursor:pointer;transition:.15s;font-size:10px;color:var(--td);}
+.fb-type-card:hover{border-color:rgba(0,245,255,.4);}
+.fb-type-card.active{border-color:var(--c);background:rgba(0,245,255,.08);color:var(--c);}
+.fb-type-card .ico{font-size:20px;display:block;margin-bottom:4px;}
+.fb-preview{background:rgba(0,0,0,.25);border:1px solid var(--b);border-radius:10px;padding:12px;margin-bottom:12px;min-height:60px;font-size:12px;color:var(--td);line-height:1.6;white-space:pre-wrap;}
+.fb-preview-lbl{font-size:9px;font-family:'Share Tech Mono';color:var(--p);margin-bottom:6px;text-transform:uppercase;}
+.fb-rule-vis{background:var(--s2);border:1px solid rgba(191,90,242,.3);border-radius:10px;padding:10px;margin-bottom:8px;}
+.fb-rule-row{display:grid;grid-template-columns:1fr auto 1fr auto auto auto;gap:6px;align-items:center;margin-bottom:6px;}
+@media(max-width:640px){.fb-rule-row{grid-template-columns:1fr 1fr;}}
+.fb-rl-presets{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px;}
+.fb-rl-presets button{font-size:10px;padding:4px 8px;border-radius:6px;background:var(--s3);border:1px solid var(--b);color:var(--td);cursor:pointer;}
+.fb-rl-presets button:hover{border-color:var(--y);color:var(--y);}
+.fb-sim-steps{display:flex;flex-direction:column;gap:8px;margin-bottom:12px;}
+.fb-sim-step{display:flex;gap:10px;align-items:flex-start;background:var(--s2);border:1px solid var(--b);border-radius:8px;padding:10px;font-size:11px;}
+.fb-sim-step-num{width:24px;height:24px;border-radius:50%;background:rgba(0,245,255,.15);color:var(--c);display:flex;align-items:center;justify-content:center;font-weight:bold;flex-shrink:0;font-size:10px;}
+.fb-sim-msg{background:rgba(57,255,20,.06);border:1px solid rgba(57,255,20,.25);border-radius:8px;padding:12px;font-size:12px;line-height:1.7;white-space:pre-wrap;}
+.fb-quick-chips{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px;}
+.fb-quick-chips button{font-size:10px;padding:4px 10px;border-radius:20px;background:rgba(191,90,242,.1);border:1px solid rgba(191,90,242,.3);color:#bf5af2;cursor:pointer;}
+#fc-wrap svg.fc-edges{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:0;}
+.fc-node{z-index:2;}
+.fb-save-bar{position:sticky;bottom:0;background:linear-gradient(transparent,var(--s) 20%);padding:12px 0 0;margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;}
+.fb-save-bar .btn.bp{flex:1;min-width:140px;}
 .fj-ch-row{display:flex;gap:7px;align-items:center;margin-bottom:7px;background:var(--s2);padding:8px;border-radius:6px;border:1px solid rgba(255,45,85,.2);flex-wrap:wrap;}
 .fj-btn-row{display:flex;gap:7px;align-items:center;margin-bottom:7px;background:var(--s2);padding:8px;border-radius:6px;border:1px solid rgba(0,245,255,.2);flex-wrap:wrap;}
 .bc-check-row{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:14px;background:var(--s2);border:1px solid var(--b);border-radius:8px;padding:12px;}
@@ -5932,7 +5988,7 @@ body.theme-amoled{--bg:#000;--s:#050505;--s2:#0a0a0a;--s3:#111;}
     <div class="nav-grp" data-grp="auto">
       <button type="button" class="nav-grp-h" onclick="toggleNavGrp(this)">Automation <span>▼</span></button>
       <div class="nav-grp-body">
-        <button class="ni" data-nav="builder" onclick="nav('builder',this)">🚀 Flow Builder <span style="font-size:9px;color:var(--p);margin-left:auto">Selenium</span></button>
+        <button class="ni" data-nav="builder" onclick="nav('builder',this)">🚀 Flow Builder <span style="font-size:9px;color:var(--p);margin-left:auto">Pro</span></button>
         <button class="ni" data-nav="fj" onclick="nav('fj',this)">🔒 Force Join</button>
         <button class="ni" data-nav="welcome" onclick="nav('welcome',this)">👋 Welcome Message</button>
         <button class="ni" data-nav="tagger" onclick="nav('tagger',this)">📣 User Tagger</button>
@@ -6459,11 +6515,24 @@ body.theme-amoled{--bg:#000;--s:#050505;--s2:#0a0a0a;--s3:#111;}
 
   <div class="panel" id="p-builder">
 
+    <div class="fb-hero">
+      <h2>🚀 Flow Builder Pro <span style="font-size:10px;color:var(--p)">v2.1</span></h2>
+      <p>Bot flows banao bina code likhe — drag, click, test. Neeche search karo ya <b style="color:var(--g)">Quick Start</b> se 30 sec mein pehla flow banao.</p>
+    </div>
+
+    <div class="fb-stats" id="fb-stats">
+      <div class="fb-stat"><div class="fb-stat-n" id="fb-st-total">0</div><div class="fb-stat-l">Total Flows</div></div>
+      <div class="fb-stat"><div class="fb-stat-n" id="fb-st-wiz">0</div><div class="fb-stat-l">Wizards</div></div>
+      <div class="fb-stat"><div class="fb-stat-n" id="fb-st-wh">0</div><div class="fb-stat-l">Webhooks</div></div>
+      <div class="fb-stat"><div class="fb-stat-n" id="fb-st-rules">0</div><div class="fb-stat-l">With Logic</div></div>
+      <div class="fb-stat"><div class="fb-stat-n" id="fb-st-browser">0</div><div class="fb-stat-l">Browser</div></div>
+    </div>
+
     <div class="card">
-
-      <div class="sh"><div class="st">🚀 FLOW BUILDER <span style="font-size:9px;color:var(--p);margin-left:6px">v2.0</span></div>
-
+      <div class="sh">
+        <div class="st">Your Flows</div>
         <div style="display:flex;gap:5px;flex-wrap:wrap">
+          <button class="btn bsu bsm" onclick="openFlowQuickStart()">⚡ Quick Start</button>
           <button class="btn bc bsm" onclick="openFlowSim()">🧪 Simulator</button>
           <button class="btn bw bsm" onclick="openFlowCanvas()">🎨 Canvas</button>
           <button class="btn bp bsm" onclick="openFlowTemplates()">📦 Templates</button>
@@ -6473,11 +6542,26 @@ body.theme-amoled{--bg:#000;--s:#050505;--s2:#0a0a0a;--s3:#111;}
         </div>
       </div>
 
-      <div style="background:rgba(0,245,255,.04);border:1px solid var(--b);border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:11px;color:var(--td);line-height:1.8">
-        <b style="color:var(--c)">Flow 2.0:</b> IF/ELSE rules · Sub-flows · Rate limits · Webhook triggers · Wizard steps · Drag canvas · Test simulator
+      <div class="fb-toolbar">
+        <input type="text" id="fb-search" class="fi fb-search" placeholder="🔍 Search by ID, trigger, type..." oninput="filterFlowList()">
+        <select id="fb-filter-type" class="fb-filter" onchange="filterFlowList()">
+          <option value="">All types</option>
+          <option value="text">Text</option>
+          <option value="api">API</option>
+          <option value="curl">cURL</option>
+          <option value="browser">Browser</option>
+          <option value="wizard">Wizard</option>
+          <option value="include">Include</option>
+        </select>
+        <div class="fb-view-toggle">
+          <button type="button" id="fb-view-cards" class="active" onclick="setFlowView('cards')">▦ Cards</button>
+          <button type="button" id="fb-view-table" onclick="setFlowView('table')">☰ Table</button>
+        </div>
       </div>
 
-      <div class="tr"><div class="tw"><table><thead><tr><th>ID</th><th>Trigger / Free Text</th><th>Type</th><th>Credit</th><th>Rate</th><th>Action</th></tr></thead><tbody id="cb"></tbody></table></div></div>
+      <div id="fb-grid" class="fb-grid" style="display:none"></div>
+
+      <div class="tr" id="fb-table-wrap"><div class="tw"><table><thead><tr><th>ID</th><th>Trigger</th><th>Type</th><th>Features</th><th>Action</th></tr></thead><tbody id="cb"></tbody></table></div></div>
     </div>
   </div>
 
@@ -7548,19 +7632,32 @@ body.theme-amoled{--bg:#000;--s:#050505;--s2:#0a0a0a;--s3:#111;}
 
 <!-- PAGE BUILDER MODAL -->
 
-<div class="mbox" id="m-builder"><div class="modal" style="max-width:820px">
+<div class="mbox" id="m-builder"><div class="modal" style="max-width:880px">
   <button class="mc" onclick="closeModal('m-builder')">✕</button>
-  <h3 style="color:var(--c);margin-bottom:12px;font-family:Orbitron;font-size:12px">🛠️ PAGE / FLOW BUILDER</h3>
+  <h3 style="color:var(--c);margin-bottom:8px;font-family:Orbitron;font-size:12px">🛠️ FLOW EDITOR PRO</h3>
+  <div style="font-size:10px;color:var(--td);margin-bottom:10px">Tabs use karo — har section alag. Save se pehle <b style="color:var(--c)">Test</b> dabao.</div>
+
+  <div class="fb-tabs" id="pb-tabs">
+    <button type="button" class="fb-tab active" data-tab="setup" onclick="switchPbTab('setup')">① Setup</button>
+    <button type="button" class="fb-tab" data-tab="content" onclick="switchPbTab('content')">② Message &amp; API</button>
+    <button type="button" class="fb-tab" data-tab="logic" onclick="switchPbTab('logic')">③ Logic &amp; Routes</button>
+    <button type="button" class="fb-tab" data-tab="power" onclick="switchPbTab('power')">④ Power Tools</button>
+  </div>
+
+  <div class="fb-preview-lbl">👁 Live Preview</div>
+  <div class="fb-preview" id="pb-live-preview">Message preview yahan dikhega...</div>
+
+  <div class="pb-tab-panel active" id="pb-tab-setup">
 
   <div class="fg mb">
 
-    <div class="fgrp"><label class="fl">Page ID</label><input type="text" id="pb-id" class="fi" placeholder="home, search_page..."></div>
+    <div class="fgrp"><label class="fl">Page ID</label><input type="text" id="pb-id" class="fi" placeholder="home, search_page..." oninput="updatePbPreview()"></div>
 
     <div class="fgrp">
-      <label class="fl">Trigger Command (no /) <span style="color:var(--p);font-size:9px">leave blank for Free Text only</span></label>
+      <label class="fl">Trigger Command (no /) <span style="color:var(--p);font-size:9px">blank = Free Text only</span></label>
 
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-        <input type="text" id="pb-trigger" class="fi" placeholder="start, search..." style="flex:1;min-width:120px">
+        <input type="text" id="pb-trigger" class="fi" placeholder="start, search..." style="flex:1;min-width:120px" oninput="updatePbPreview()">
 
         <div style="display:flex;align-items:center;gap:6px;background:var(--s2);border:1px solid var(--b);border-radius:6px;padding:6px 10px;white-space:nowrap;cursor:pointer" onclick="g('pb-ft-on').checked=!g('pb-ft-on').checked;onFtToggle(g('pb-ft-on'))">
           <input type="checkbox" id="pb-ft-on" style="width:15px;height:15px;accent-color:var(--p);cursor:pointer;pointer-events:none">
@@ -7568,9 +7665,18 @@ body.theme-amoled{--bg:#000;--s:#050505;--s2:#0a0a0a;--s3:#111;}
         </div>
       </div>
     </div>
-
-    <div class="fgrp"><label class="fl">Type</label><select class="fsel" id="pb-type" onchange="onType()"><option value="text">📄 Static Text</option><option value="api">🌐 API (GET)</option><option value="curl">🔗 cURL / POST</option><option value="browser">🌐 Browser (Selenium/PW)</option><option value="include">📦 Include / Sub-flow</option><option value="wizard">🧙 Multi-step Wizard</option></select></div>
   </div>
+
+  <label class="fl" style="margin-bottom:6px;display:block">Flow Type — click to select</label>
+  <div class="fb-type-grid" id="pb-type-grid">
+    <div class="fb-type-card active" data-type="text" onclick="pickPbType('text')"><span class="ico">📄</span>Text</div>
+    <div class="fb-type-card" data-type="api" onclick="pickPbType('api')"><span class="ico">🌐</span>API</div>
+    <div class="fb-type-card" data-type="curl" onclick="pickPbType('curl')"><span class="ico">🔗</span>cURL</div>
+    <div class="fb-type-card" data-type="browser" onclick="pickPbType('browser')"><span class="ico">🤖</span>Browser</div>
+    <div class="fb-type-card" data-type="wizard" onclick="pickPbType('wizard')"><span class="ico">🧙</span>Wizard</div>
+    <div class="fb-type-card" data-type="include" onclick="pickPbType('include')"><span class="ico">📦</span>Include</div>
+  </div>
+  <select class="fsel" id="pb-type" onchange="onType();syncTypeCards();updatePbPreview()" style="margin-bottom:12px;display:none"><option value="text">text</option><option value="api">api</option><option value="curl">curl</option><option value="browser">browser</option><option value="include">include</option><option value="wizard">wizard</option></select>
 
   <!-- Free Text options -->
 
@@ -7603,49 +7709,14 @@ body.theme-amoled{--bg:#000;--s:#050505;--s2:#0a0a0a;--s3:#111;}
 
     <div class="fgrp"><label class="fl" style="color:var(--r)">🔒 Access Control</label><input type="text" id="pb-ac" class="fi" placeholder="{ADMINS} or 123,456"></div>
 
-    <div class="fgrp"><label class="fl" style="color:var(--y)">🔀 Fallback Page ID</label><input type="text" id="pb-fb" class="fi" placeholder="access_denied"></div>
+    <div class="fgrp"><label class="fl" style="color:var(--y)">🔀 Fallback Page</label><select class="fsel" id="pb-fb" onchange="updatePbPreview()"><option value="">— None —</option></select></div>
   </div>
 
-  <!-- ═══ FLOW BUILDER 2.0 ═══ -->
-  <div style="background:rgba(191,90,242,.06);border:1px solid rgba(191,90,242,.35);border-radius:10px;padding:12px;margin-bottom:12px">
-    <div style="font-family:Orbitron;font-size:11px;color:#bf5af2;margin-bottom:10px">⚡ FLOW 2.0 — Advanced</div>
-    <div class="fg mb">
-      <div class="fgrp"><label class="fl">📦 Include Page (sub-flow)</label><input type="text" id="pb-include" class="fi" placeholder="page_id — for Include type"></div>
-      <div class="fgrp"><label class="fl">⬅️ Run Before</label><input type="text" id="pb-sf-before" class="fi" placeholder="page_id"></div>
-      <div class="fgrp"><label class="fl">➡️ Run After</label><input type="text" id="pb-sf-after" class="fi" placeholder="page_id"></div>
-    </div>
-    <div class="fg mb">
-      <div class="fgrp"><label class="fl" style="color:var(--y)">⏱ Rate Limit / hour</label><input type="number" id="pb-rl-max" class="fi" value="0" min="0" placeholder="0=off"></div>
-      <div class="fgrp" style="flex:2"><label class="fl">Rate limit message</label><input type="text" id="pb-rl-msg" class="fi" value="⏳ Too many requests. Try again later."></div>
-    </div>
-    <div class="bb" style="border-color:#bf5af2;padding:10px;margin-bottom:10px">
-      <label class="fl" style="color:#bf5af2">🔀 IF / ELSE Rules</label>
-      <div style="font-size:10px;color:var(--td);margin:4px 0 8px">{query} contains vip · {query} == hello · {tg_searches} > 5</div>
-      <div id="flow-rules-c"></div>
-      <button class="btn bg bsm" onclick="addFlowRule()" style="margin-top:6px">+ Add Rule</button>
-    </div>
-    <div id="f-wizard" style="display:none;margin-bottom:10px">
-      <div class="bb" style="border-color:var(--o);padding:10px">
-        <label class="fl" style="color:var(--o)">🧙 WIZARD STEPS</label>
-        <div id="wiz-steps-c"></div>
-        <button class="btn bg bsm" onclick="addWizStep()" style="margin-top:6px">+ Add Step</button>
-        <div class="fgrp" style="margin-top:8px"><label class="fl">Final message (after all steps)</label><textarea id="pb-wiz-final" class="fta" style="min-height:50px" placeholder="✅ Done! Name: {name}"></textarea></div>
-      </div>
-    </div>
-    <div class="tw2 mb" style="margin-bottom:8px">
-      <label class="tg"><input type="checkbox" id="pb-wh-on" onchange="onWhToggle()"><span class="ts"></span></label>
-      <div><strong style="font-size:12px;color:var(--c)">🔗 Webhook Trigger</strong><div style="font-size:10px;color:var(--td)">External URL can trigger this flow</div></div>
-    </div>
-    <div id="pb-wh-box" style="display:none">
-      <input type="hidden" id="pb-wh-key">
-      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">
-        <input type="text" id="pb-wh-url" class="fi" readonly style="flex:1;font-size:10px" placeholder="Save page to generate webhook URL">
-        <button class="btn bw bsm" onclick="regenWebhookKey()">🔄 New Key</button>
-        <button class="btn bg bsm" onclick="copyWhUrl()">📋 Copy</button>
-      </div>
-    </div>
-    <div class="fgrp"><label class="fl">📝 Flow Description</label><input type="text" id="pb-flow-desc" class="fi" placeholder="Optional notes for this flow"></div>
-  </div>
+  </div><!-- /pb-tab-setup -->
+
+  <div class="pb-tab-panel" id="pb-tab-content">
+
+  <!-- ═══ FLOW 2.0 moved to logic tab — placeholder anchor for include in setup if needed -->
 
   <!-- API fields -->
 
@@ -7886,7 +7957,7 @@ body.theme-amoled{--bg:#000;--s:#050505;--s2:#0a0a0a;--s3:#111;}
     </div>
 
     <!-- /💎 PREMIUM EMOJI PICKER -->
-    <textarea id="pb-text" class="fta" style="min-height:95px" placeholder="Your message...&#10;{tg_name}: {query}&#10;Result: {curl_response}"></textarea>
+    <textarea id="pb-text" class="fta" style="min-height:95px" placeholder="Your message...&#10;{tg_name}: {query}&#10;Result: {curl_response}" oninput="updatePbPreview()"></textarea>
   </div>
 
   <!-- Buttons -->
@@ -7899,34 +7970,118 @@ body.theme-amoled{--bg:#000;--s:#050505;--s2:#0a0a0a;--s3:#111;}
     <div id="btnc"></div>
     <button class="btn bg bsm" onclick="addBtn()" style="margin-top:7px">+ Add Button</button>
   </div>
-  <button class="btn bp" onclick="savePage()" style="width:100%;margin-top:14px;padding:11px;font-size:14px">💾 SAVE PAGE</button>
+
+  </div><!-- /pb-tab-content -->
+
+  <div class="pb-tab-panel" id="pb-tab-logic">
+  <div style="background:rgba(191,90,242,.06);border:1px solid rgba(191,90,242,.35);border-radius:10px;padding:12px;margin-bottom:12px">
+    <div style="font-family:Orbitron;font-size:11px;color:#bf5af2;margin-bottom:10px">🔀 Smart Routing — bina syntax yaad kiye</div>
+    <div class="fg mb">
+      <div class="fgrp"><label class="fl">📦 Include Page</label><select class="fsel" id="pb-include"><option value="">— Select page —</option></select></div>
+      <div class="fgrp"><label class="fl">⬅️ Run Before</label><select class="fsel" id="pb-sf-before"><option value="">— None —</option></select></div>
+      <div class="fgrp"><label class="fl">➡️ Run After</label><select class="fsel" id="pb-sf-after"><option value="">— None —</option></select></div>
+    </div>
+    <div class="bb" style="border-color:#bf5af2;padding:10px;margin-bottom:10px">
+      <label class="fl" style="color:#bf5af2">IF / ELSE — Visual Builder</label>
+      <div style="font-size:10px;color:var(--td);margin:4px 0 8px">Dropdown se condition banao — code automatically generate hoga</div>
+      <div id="flow-rules-c"></div>
+      <button class="btn bg bsm" onclick="addFlowRule()" style="margin-top:6px">+ Add Rule</button>
+    </div>
+    <div id="f-wizard" style="display:none;margin-bottom:10px">
+      <div class="bb" style="border-color:var(--o);padding:10px">
+        <label class="fl" style="color:var(--o)">🧙 WIZARD STEPS</label>
+        <div id="wiz-steps-c"></div>
+        <button class="btn bg bsm" onclick="addWizStep()" style="margin-top:6px">+ Add Step</button>
+        <div class="fgrp" style="margin-top:8px"><label class="fl">Final message</label><textarea id="pb-wiz-final" class="fta" style="min-height:50px" placeholder="✅ Done! Name: {name}" oninput="updatePbPreview()"></textarea></div>
+      </div>
+    </div>
+  </div>
+  </div><!-- /pb-tab-logic -->
+
+  <div class="pb-tab-panel" id="pb-tab-power">
+  <div style="background:rgba(0,245,255,.04);border:1px solid var(--b);border-radius:10px;padding:12px;margin-bottom:12px">
+    <div class="fg mb">
+      <div class="fgrp"><label class="fl" style="color:var(--y)">⏱ Rate Limit / hour</label><input type="number" id="pb-rl-max" class="fi" value="0" min="0" placeholder="0=off"></div>
+      <div class="fgrp" style="flex:2"><label class="fl">Rate limit message</label><input type="text" id="pb-rl-msg" class="fi" value="⏳ Too many requests. Try again later."></div>
+    </div>
+    <div class="fb-rl-presets">
+      <span style="font-size:10px;color:var(--td);align-self:center">Quick:</span>
+      <button type="button" onclick="g('pb-rl-max').value=5">5/hr</button>
+      <button type="button" onclick="g('pb-rl-max').value=10">10/hr</button>
+      <button type="button" onclick="g('pb-rl-max').value=30">30/hr</button>
+      <button type="button" onclick="g('pb-rl-max').value=100">100/hr</button>
+      <button type="button" onclick="g('pb-rl-max').value=0">Off</button>
+    </div>
+    <div class="tw2 mb" style="margin:12px 0 8px">
+      <label class="tg"><input type="checkbox" id="pb-wh-on" onchange="onWhToggle()"><span class="ts"></span></label>
+      <div><strong style="font-size:12px;color:var(--c)">🔗 Webhook Trigger</strong><div style="font-size:10px;color:var(--td)">Website / app se flow trigger karo</div></div>
+    </div>
+    <div id="pb-wh-box" style="display:none">
+      <input type="hidden" id="pb-wh-key">
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">
+        <input type="text" id="pb-wh-url" class="fi" readonly style="flex:1;font-size:10px" placeholder="Save page to generate webhook URL">
+        <button class="btn bw bsm" onclick="regenWebhookKey()">🔄 New Key</button>
+        <button class="btn bg bsm" onclick="copyWhUrl()">📋 Copy</button>
+      </div>
+    </div>
+    <div class="fgrp"><label class="fl">📝 Flow Description</label><input type="text" id="pb-flow-desc" class="fi" placeholder="Notes for yourself"></div>
+  </div>
+  </div><!-- /pb-tab-power -->
+
+  <div class="fb-save-bar">
+    <button class="btn bc bsm" onclick="quickTestCurrentPage()">🧪 Test</button>
+    <button class="btn bp" onclick="savePage()" style="padding:11px;font-size:14px">💾 SAVE FLOW</button>
+  </div>
+</div></div>
+
+<!-- QUICK START WIZARD -->
+<div class="mbox" id="m-flow-quick"><div class="modal" style="max-width:520px">
+  <button class="mc" onclick="closeModal('m-flow-quick')">✕</button>
+  <h3 style="color:var(--g);font-family:Orbitron;font-size:12px;margin-bottom:12px">⚡ QUICK START — 30 sec mein flow</h3>
+  <div class="fgrp mb"><label class="fl">Step 1 — Flow name (ID)</label><input type="text" id="fq-id" class="fi" placeholder="welcome, help_menu"></div>
+  <div class="fgrp mb"><label class="fl">Step 2 — Command (no /)</label><input type="text" id="fq-trigger" class="fi" placeholder="start"></div>
+  <div class="fgrp mb"><label class="fl">Step 3 — Bot reply message</label><textarea id="fq-text" class="fta" style="min-height:80px" placeholder="👋 Hello {tg_name}!"></textarea></div>
+  <div class="fgrp mb"><label class="fl">Type</label>
+    <select id="fq-type" class="fsel"><option value="text">Simple Text</option><option value="wizard">Multi-step Wizard</option><option value="api">API Search</option></select>
+  </div>
+  <button class="btn bp" onclick="finishFlowQuickStart()" style="width:100%;padding:12px">✨ Create Flow</button>
 </div></div>
 
 <!-- FLOW SIMULATOR MODAL -->
-<div class="mbox" id="m-flow-sim"><div class="modal" style="max-width:720px">
+<div class="mbox" id="m-flow-sim"><div class="modal" style="max-width:760px">
   <button class="mc" onclick="closeModal('m-flow-sim')">✕</button>
-  <h3 style="color:var(--c);margin-bottom:12px;font-family:Orbitron;font-size:12px">🧪 FLOW TEST SIMULATOR</h3>
+  <h3 style="color:var(--c);margin-bottom:8px;font-family:Orbitron;font-size:12px">🧪 FLOW SIMULATOR PRO</h3>
+  <p style="font-size:11px;color:var(--td);margin-bottom:12px">Telegram pe bheje bina dekho bot kya karega — step-by-step.</p>
   <div class="fg mb">
-    <div class="fgrp"><label class="fl">Page</label><select class="fsel" id="fs-page"></select></div>
-    <div class="fgrp"><label class="fl">Test Query</label><input type="text" id="fs-query" class="fi" value="hello test" placeholder="Simulated user message"></div>
+    <div class="fgrp"><label class="fl">Page</label><select class="fsel" id="fs-page" onchange="runFlowSim()"></select></div>
+    <div class="fgrp"><label class="fl">Test Query</label><input type="text" id="fs-query" class="fi" value="hello test" placeholder="User message" onkeydown="if(event.key==='Enter')runFlowSim()"></div>
   </div>
-  <button class="btn bp bsm" onclick="runFlowSim()" style="width:100%;margin-bottom:12px">▶ Run Simulation</button>
-  <div id="fs-out" style="background:var(--s2);border:1px solid var(--b);border-radius:8px;padding:12px;font-family:'Share Tech Mono';font-size:11px;color:var(--td);min-height:120px;max-height:360px;overflow:auto;white-space:pre-wrap">Select a page and run simulation...</div>
+  <div class="fb-quick-chips">
+    <button type="button" onclick="fsSetQuery('hello')">hello</button>
+    <button type="button" onclick="fsSetQuery('vip user')">vip user</button>
+    <button type="button" onclick="fsSetQuery('search test')">search test</button>
+    <button type="button" onclick="fsSetQuery('')">empty</button>
+  </div>
+  <button class="btn bp bsm" onclick="runFlowSim()" style="width:100%;margin:10px 0">▶ Run Simulation</button>
+  <div id="fs-steps" class="fb-sim-steps"></div>
+  <div id="fs-out" class="fb-sim-msg" style="display:none"></div>
+  <details style="margin-top:10px"><summary style="font-size:10px;color:var(--td);cursor:pointer">Raw JSON</summary><pre id="fs-raw" style="font-size:10px;max-height:160px;overflow:auto;margin-top:6px;color:var(--td)"></pre></details>
 </div></div>
 
 <!-- FLOW CANVAS MODAL -->
-<div class="mbox" id="m-flow-canvas"><div class="modal" style="max-width:900px">
+<div class="mbox" id="m-flow-canvas"><div class="modal" style="max-width:920px">
   <button class="mc" onclick="closeModal('m-flow-canvas')">✕</button>
-  <h3 style="color:#bf5af2;margin-bottom:8px;font-family:Orbitron;font-size:12px">🎨 FLOW CANVAS</h3>
-  <div style="font-size:10px;color:var(--td);margin-bottom:8px">Drag nodes · Double-click to edit page · Saved with page on Save</div>
+  <h3 style="color:#bf5af2;margin-bottom:8px;font-family:Orbitron;font-size:12px">🎨 VISUAL FLOW CANVAS</h3>
+  <div style="font-size:10px;color:var(--td);margin-bottom:8px">Drag nodes · Connect automatically · Double-click to rename</div>
   <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap">
     <select class="fsel" id="fc-page" onchange="loadFlowCanvas()" style="flex:1;min-width:140px"></select>
+    <button class="btn bg bsm" onclick="fcAutoLayout()">✨ Auto Layout</button>
     <button class="btn bg bsm" onclick="fcAddNode('trigger')">+ Trigger</button>
     <button class="btn bg bsm" onclick="fcAddNode('condition')">+ IF</button>
     <button class="btn bg bsm" onclick="fcAddNode('page')">+ Page</button>
-    <button class="btn bp bsm" onclick="fcSaveCanvas()">💾 Save Canvas</button>
+    <button class="btn bp bsm" onclick="fcSaveCanvas()">💾 Save</button>
   </div>
-  <div id="fc-wrap" style="position:relative;height:420px;background:repeating-linear-gradient(0deg,transparent,transparent 19px,rgba(255,255,255,.03) 19px,rgba(255,255,255,.03) 20px),repeating-linear-gradient(90deg,transparent,transparent 19px,rgba(255,255,255,.03) 19px,rgba(255,255,255,.03) 20px);border:1px solid var(--b);border-radius:8px;overflow:hidden"></div>
+  <div id="fc-wrap" style="position:relative;height:440px;background:repeating-linear-gradient(0deg,transparent,transparent 19px,rgba(255,255,255,.03) 19px,rgba(255,255,255,.03) 20px),repeating-linear-gradient(90deg,transparent,transparent 19px,rgba(255,255,255,.03) 19px,rgba(255,255,255,.03) 20px);border:1px solid var(--b);border-radius:8px;overflow:hidden"></div>
 </div></div>
 
 <!-- FLOW TEMPLATES MODAL -->
@@ -9106,6 +9261,55 @@ function onFtToggle(cb){
   const opts=g('ft-opts-row');
   if(cb.checked){opts.style.display='block';g('pb-trigger').placeholder='Optional trigger (or blank for free text only)';}
   else{opts.style.display='none';g('pb-trigger').placeholder='start, search...';}
+  updatePbPreview();
+}
+function switchPbTab(tab){
+  document.querySelectorAll('.fb-tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===tab));
+  document.querySelectorAll('.pb-tab-panel').forEach(p=>p.classList.toggle('active',p.id==='pb-tab-'+tab));
+}
+function pickPbType(t){g('pb-type').value=t;syncTypeCards();onType();updatePbPreview();}
+function syncTypeCards(){
+  const t=g('pb-type')?.value||'text';
+  document.querySelectorAll('.fb-type-card').forEach(c=>c.classList.toggle('active',c.dataset.type===t));
+}
+function updatePbPreview(){
+  const prev=g('pb-live-preview');if(!prev)return;
+  const id=g('pb-id')?.value||'new_page';
+  const trig=g('pb-trigger')?.value;
+  const typ=g('pb-type')?.value||'text';
+  const txt=g('pb-text')?.value||g('pb-wiz-final')?.value||'';
+  let lines=[`📋 <b>${id}</b> · ${typ.toUpperCase()}`,trig?`⚡ /${trig}`:'💬 Free text mode'];
+  if(txt.trim())lines.push('','💬 Preview:',txt.substring(0,280)+(txt.length>280?'…':''));
+  else lines.push('','<i>Message tab mein text likho...</i>');
+  prev.innerHTML=lines.join('\n');
+}
+function pagePickerHtml(sel,excl){
+  let h='<option value="">— None —</option>';
+  (window.PAGES||[]).forEach(p=>{if(p.id===excl)return;h+=`<option value="${p.id}"${p.id===sel?' selected':''}>${p.id}${p.trigger?' → /'+p.trigger:''}</option>`;});
+  return h;
+}
+function refreshPagePickers(excl){
+  const x=excl||g('pb-id')?.value||'';
+  [['pb-fb',''],['pb-include',''],['pb-sf-before',''],['pb-sf-after','']].forEach(([id])=>{
+    const el=g(id);if(!el||el.tagName!=='SELECT')return;
+    const v=el.value;el.innerHTML=pagePickerHtml('',x);if(v)el.value=v;
+  });
+}
+function parseRuleCond(cond){
+  if(!cond)return{field:'{query}',op:'contains',val:''};
+  let m=cond.match(/^(\{[^}]+\})\s+(contains|==|!=|>=|<=|>|<)\s+(.+)$/i);
+  if(m)return{field:m[1],op:m[2],val:m[3]};
+  m=cond.match(/^(\{[^}]+\})\s+matches\s+\/(.+)\/\w*$/i);
+  if(m)return{field:m[1],op:'matches',val:m[2]};
+  return{field:'{query}',op:'contains',val:cond};
+}
+function buildRuleCond(field,op,val){
+  if(op==='matches')return `${field} matches /${val}/i`;
+  return `${field} ${op} ${val}`;
+}
+function rulePageOpts(sel){
+  const cur=g('pb-id')?.value||'';
+  return pagePickerHtml(sel,cur).replace('— None —','— Select —');
 }
 function onType(){
   const t=g('pb-type').value;
@@ -9114,28 +9318,43 @@ function onType(){
   g('f-ext').style.display=(t==='api'||t==='curl')?'block':'none';
   g('f-browser').style.display=t==='browser'?'block':'none';
   if(g('f-wizard'))g('f-wizard').style.display=t==='wizard'?'block':'none';
+  if(t==='wizard')switchPbTab('logic');
+  if(t==='include')switchPbTab('logic');
+  updatePbPreview();
 }
 function onWhToggle(){if(g('pb-wh-box'))g('pb-wh-box').style.display=g('pb-wh-on')?.checked?'block':'none';}
 function addFlowRule(d={}){
   const c=g('flow-rules-c');if(!c)return;
-  const row=document.createElement('div');row.className='flow-rule-row';row.style.cssText='display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap';
-  row.innerHTML=`<input type="text" class="fi fr-cond" placeholder="IF {query} contains vip" value="${(d.cond||'').replace(/"/g,'&quot;')}" style="flex:2;min-width:140px">
-    <input type="text" class="fi fr-then" placeholder="Then page_id" value="${d.page_id||''}" style="flex:1">
-    <input type="text" class="fi fr-else" placeholder="Else page_id" value="${d.else_page_id||''}" style="flex:1">
-    <button class="btn bd bsm" onclick="this.parentElement.remove()">✕</button>`;
+  const p=parseRuleCond(d.cond||'');
+  const row=document.createElement('div');row.className='flow-rule-row fb-rule-vis';
+  row.innerHTML=`<div class="fb-rule-row">
+    <select class="fsel fr-field"><option value="{query}"${p.field==='{query}'?' selected':''}>User message</option><option value="{tg_name}"${p.field==='{tg_name}'?' selected':''}>Name</option><option value="{tg_searches}"${p.field==='{tg_searches}'?' selected':''}>Searches left</option><option value="{user_key}"${p.field==='{user_key}'?' selected':''}>User key</option></select>
+    <select class="fsel fr-op"><option value="contains"${p.op==='contains'?' selected':''}>contains</option><option value="=="${p.op==='=='?' selected':''}>equals</option><option value="!="${p.op==='!='?' selected':''}>not equals</option><option value=">"${p.op==='>'?' selected':''}>&gt;</option><option value="<"${p.op==='<'?' selected':''}>&lt;</option><option value="matches"${p.op==='matches'?' selected':''}>regex</option></select>
+    <input type="text" class="fi fr-val" placeholder="value" value="${(p.val||'').replace(/"/g,'&quot;')}">
+    <span style="font-size:9px;color:var(--g)">→</span>
+    <select class="fsel fr-then">${rulePageOpts(d.page_id||'')}</select>
+    <select class="fsel fr-else">${rulePageOpts(d.else_page_id||'')}</select>
+    <button class="btn bd bsm" onclick="this.closest('.flow-rule-row').remove()">✕</button>
+  </div>`;
   c.appendChild(row);
 }
 function getFlowRules(){
-  const out=[];document.querySelectorAll('.flow-rule-row').forEach(r=>{
-    const cond=r.querySelector('.fr-cond')?.value||'';if(!cond.trim())return;
-    out.push({cond,page_id:r.querySelector('.fr-then')?.value||'',else_page_id:r.querySelector('.fr-else')?.value||''});
-  });return out;
+  const out=[];
+  document.querySelectorAll('.flow-rule-row').forEach(r=>{
+    const field=r.querySelector('.fr-field')?.value||'{query}';
+    const op=r.querySelector('.fr-op')?.value||'contains';
+    const val=(r.querySelector('.fr-val')?.value||'').trim();
+    if(!val)return;
+    out.push({cond:buildRuleCond(field,op,val),page_id:r.querySelector('.fr-then')?.value||'',else_page_id:r.querySelector('.fr-else')?.value||''});
+  });
+  return out;
 }
 function addWizStep(d={}){
   const c=g('wiz-steps-c');if(!c)return;
-  const row=document.createElement('div');row.className='wiz-row';row.style.cssText='border:1px solid var(--b);border-radius:6px;padding:8px;margin-bottom:6px';
-  row.innerHTML=`<div style="display:flex;gap:6px;margin-bottom:4px"><input type="text" class="fi ws-var" placeholder="var name" value="${d.var||''}" style="width:100px"><button class="btn bd bsm" onclick="this.closest('.wiz-row').remove()">✕</button></div>
-    <textarea class="fta ws-text" style="min-height:45px" placeholder="Step message...">${d.text||''}</textarea>`;
+  const n=c.querySelectorAll('.wiz-row').length+1;
+  const row=document.createElement('div');row.className='wiz-row';row.style.cssText='border:1px solid var(--b);border-radius:8px;padding:10px;margin-bottom:8px;background:var(--s2)';
+  row.innerHTML=`<div style="display:flex;gap:6px;align-items:center;margin-bottom:6px"><span style="font-size:10px;color:var(--o);font-family:'Share Tech Mono'">STEP ${n}</span><input type="text" class="fi ws-var" placeholder="variable (name)" value="${d.var||''}" style="flex:1"><button class="btn bd bsm" onclick="this.closest('.wiz-row').remove()">✕</button></div>
+    <textarea class="fta ws-text" style="min-height:50px" placeholder="Ask user: What is your name?" oninput="updatePbPreview()">${d.text||''}</textarea>`;
   c.appendChild(row);
 }
 function getWizSteps(){
@@ -9150,50 +9369,99 @@ async function regenWebhookKey(){
   else toast(r.error||'Error','error');
 }
 function copyWhUrl(){const u=g('pb-wh-url')?.value;if(!u)return;navigator.clipboard?.writeText(u);toast('Copied!','success');}
+function fillFlowSelects(selId,pages){
+  const sel=g(selId);if(!sel)return;
+  sel.innerHTML='';(pages||window.PAGES||[]).forEach(p=>{sel.innerHTML+=`<option value="${p.id}">${p.id} (/${p.trigger||'free'})</option>`;});
+}
 function openFlowSim(){
-  const sel=g('fs-page');if(sel){sel.innerHTML='';(window.PAGES||[]).forEach(p=>{sel.innerHTML+=`<option value="${p.id}">${p.id} (/${p.trigger||'free'})</option>`;});}
-  openModal('m-flow-sim');
+  fillFlowSelects('fs-page');openModal('m-flow-sim');runFlowSim();
+}
+function fsSetQuery(q){g('fs-query').value=q;runFlowSim();}
+function renderSimResult(r){
+  const steps=g('fs-steps'),out=g('fs-out'),raw=g('fs-raw');
+  if(steps){steps.innerHTML='';(r.steps||[]).forEach((s,i)=>{
+    steps.innerHTML+=`<div class="fb-sim-step"><div class="fb-sim-step-num">${i+1}</div><div><b>${s.step||'step'}</b>${s.page_id?' → '+s.page_id:''}${s.from?' <span style="color:var(--p)">('+s.from+'→'+s.to+')</span>':''}${s.max?' <span style="color:var(--r)">rate limited</span>':''}</div></div>`;
+  });}
+  if(out){
+    if(!r.ok){out.style.display='block';out.textContent='❌ '+(r.error||'Failed');return;}
+    let msg=r.message||r.message_preview||r.final_preview||'';
+    if(r.would_call){msg+=(msg?'\n\n':'')+'🔗 Would call: '+(typeof r.would_call==='string'?r.would_call:JSON.stringify(r.would_call));}
+    out.style.display='block';out.textContent=msg||('✅ Flow '+r.page_id+' ('+r.type+') would run for: "'+(r.query||'')+'"');
+  }
+  if(raw)raw.textContent=JSON.stringify(r,null,2);
 }
 async function runFlowSim(){
   const pid=g('fs-page')?.value;const q=g('fs-query')?.value||'';
-  const out=g('fs-out');if(out)out.textContent='Running...';
+  const steps=g('fs-steps');if(steps)steps.innerHTML='<div style="color:var(--td);font-size:11px">Running...</div>';
   const r=await api('simulate_flow',{page_id:pid,query:q});
-  if(out)out.textContent=JSON.stringify(r,null,2);
+  renderSimResult(r);
+}
+function quickTestCurrentPage(){
+  const pid=g('pb-id')?.value?.trim();if(!pid)return toast('Page ID likho pehle','error');
+  fillFlowSelects('fs-page');if(g('fs-page'))g('fs-page').value=pid;
+  g('fs-query').value='test message';openModal('m-flow-sim');runFlowSim();
 }
 function openFlowCanvas(){
-  const sel=g('fc-page');if(sel){sel.innerHTML='';(window.PAGES||[]).forEach(p=>{sel.innerHTML+=`<option value="${p.id}">${p.id}</option>`;});}
-  loadFlowCanvas();openModal('m-flow-canvas');
+  fillFlowSelects('fc-page');loadFlowCanvas();openModal('m-flow-canvas');
 }
-window._fcState={nodes:[],pageId:''};
+window._fcState={nodes:[],pageId:'',edges:[]};
+function fcBuildFromPage(pg){
+  const nodes=[{id:'n1',type:'trigger',label:'/'+(pg.trigger||'?'),x:40,y:100,data:{}}];
+  let x=200;(pg.flow_rules||[]).forEach((r,i)=>{nodes.push({id:'nc'+i,type:'condition',label:(r.cond||'IF').substring(0,24),x,y:40+i*70,data:r});});
+  nodes.push({id:'n2',type:'page',label:pg.id,x:420,y:100,data:{page_id:pg.id}});
+  if(pg.subflow_after)nodes.push({id:'na',type:'page',label:'→ '+pg.subflow_after,x:580,y:100,data:{}});
+  return nodes;
+}
 function loadFlowCanvas(){
   const pid=g('fc-page')?.value;if(!pid)return;
   const pg=(window.PAGES||[]).find(p=>p.id===pid);window._fcState.pageId=pid;
-  window._fcState.nodes=(pg?.flow_canvas?.nodes)||[{id:'n1',type:'trigger',label:'/'+(pg?.trigger||'?'),x:40,y:80,data:{}},{id:'n2',type:'page',label:pid,x:220,y:80,data:{page_id:pid}}];
+  window._fcState.nodes=(pg?.flow_canvas?.nodes?.length)?pg.flow_canvas.nodes:fcBuildFromPage(pg||{id:pid});
+  window._fcState.edges=(pg?.flow_canvas?.edges)||[];
   fcRender();
 }
+function fcAutoLayout(){
+  window._fcState.nodes.forEach((n,i)=>{n.x=40+i*170;n.y=80+(i%2)*90;});
+  fcRender();toast('Layout applied','success');
+}
 function fcRender(){
-  const wrap=g('fc-wrap');if(!wrap)return;wrap.innerHTML='';
-  window._fcState.nodes.forEach((n,i)=>{
+  const wrap=g('fc-wrap');if(!wrap)return;
+  wrap.innerHTML='';
+  const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.classList.add('fc-edges');
+  wrap.appendChild(svg);
+  const nodes=window._fcState.nodes;
+  for(let i=0;i<nodes.length-1;i++){
+    const a=nodes[i],b=nodes[i+1];
+    const line=document.createElementNS('http://www.w3.org/2000/svg','line');
+    line.setAttribute('x1',a.x+70);line.setAttribute('y1',a.y+24);line.setAttribute('x2',b.x);line.setAttribute('y2',b.y+24);
+    line.setAttribute('stroke','rgba(0,245,255,.35)');line.setAttribute('stroke-width','2');line.setAttribute('marker-end','url(#arr)');
+    svg.appendChild(line);
+  }
+  if(!svg.querySelector('defs')){
+    const defs=document.createElementNS('http://www.w3.org/2000/svg','defs');
+    defs.innerHTML='<marker id="arr" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="rgba(0,245,255,.5)"/></marker>';
+    svg.appendChild(defs);
+  }
+  nodes.forEach((n,i)=>{
     const el=document.createElement('div');el.className='fc-node';
     const colors={trigger:'var(--c)',condition:'#bf5af2',page:'var(--g)'};
-    el.style.cssText=`position:absolute;left:${n.x}px;top:${n.y}px;padding:8px 12px;background:var(--s2);border:2px solid ${colors[n.type]||'var(--b)'};border-radius:8px;cursor:move;font-size:11px;font-family:'Share Tech Mono';min-width:90px;z-index:${i+1}`;
-    el.innerHTML=`<div style="font-size:9px;color:var(--td)">${n.type.toUpperCase()}</div><div>${n.label||'node'}</div>`;
+    el.style.cssText=`position:absolute;left:${n.x}px;top:${n.y}px;padding:10px 14px;background:var(--s2);border:2px solid ${colors[n.type]||'var(--b)'};border-radius:10px;cursor:move;font-size:11px;font-family:'Share Tech Mono';min-width:100px;z-index:${i+2};box-shadow:0 2px 12px rgba(0,0,0,.3)`;
+    el.innerHTML=`<div style="font-size:9px;color:var(--td);margin-bottom:2px">${n.type.toUpperCase()}</div><div style="font-weight:bold">${n.label||'node'}</div>`;
     let drag=false,sx,sy,ox,oy;
-    el.onmousedown=e=>{drag=true;sx=e.clientX;sy=e.clientY;ox=n.x;oy=n.y;e.preventDefault();};
-    window.onmousemove=e=>{if(!drag)return;n.x=ox+(e.clientX-sx);n.y=oy+(e.clientY-sy);el.style.left=n.x+'px';el.style.top=n.y+'px';};
-    window.onmouseup=()=>{drag=false;};
-    el.ondblclick=()=>{const lbl=prompt('Label',n.label);if(lbl!==null)n.label=lbl;fcRender();};
+    const mv=e=>{if(!drag)return;n.x=ox+(e.clientX-sx);n.y=oy+(e.clientY-sy);el.style.left=n.x+'px';el.style.top=n.y+'px';};
+    const up=()=>{drag=false;window.removeEventListener('mousemove',mv);window.removeEventListener('mouseup',up);fcRender();};
+    el.onmousedown=e=>{drag=true;sx=e.clientX;sy=e.clientY;ox=n.x;oy=n.y;e.preventDefault();window.addEventListener('mousemove',mv);window.addEventListener('mouseup',up);};
+    el.ondblclick=()=>{const lbl=prompt('Label',n.label);if(lbl!==null){n.label=lbl;fcRender();}};
     wrap.appendChild(el);
   });
 }
 function fcAddNode(type){
-  const id='n'+Date.now();window._fcState.nodes.push({id,type,label:type,x:60+Math.random()*200,y:40+Math.random()*200,data:{}});
+  window._fcState.nodes.push({id:'n'+Date.now(),type,label:type,x:60+Math.random()*180,y:40+Math.random()*180,data:{}});
   fcRender();
 }
 async function fcSaveCanvas(){
   const pid=window._fcState.pageId||g('fc-page')?.value;if(!pid)return toast('Select page','error');
   const pg=(window.PAGES||[]).find(p=>p.id===pid);if(!pg)return toast('Page not found','error');
-  const d={...pg,flow_canvas:{nodes:window._fcState.nodes}};
+  const d={...pg,flow_canvas:{nodes:window._fcState.nodes,edges:window._fcState.edges||[]}};
   const r=await api('save_page',d);if(r.ok){toast('Canvas saved!','success');loadPages();}else toast(r.error||'Error','error');
 }
 async function openFlowTemplates(){
@@ -9205,14 +9473,104 @@ async function openFlowTemplates(){
   grid.innerHTML='';
   r.data.forEach(t=>{
     const card=document.createElement('div');
-    card.style.cssText='background:var(--s2);border:1px solid var(--b);border-radius:8px;padding:12px;cursor:pointer';
-    card.innerHTML=`<div style="font-weight:bold;font-size:13px;margin-bottom:4px">${t.name}</div><div style="font-size:10px;color:var(--td)">${t.desc}</div><button class="btn bp bsm" style="width:100%;margin-top:8px">Import</button>`;
+    card.style.cssText='background:var(--s2);border:1px solid var(--b);border-radius:12px;padding:14px';
+    card.innerHTML=`<div style="font-weight:bold;font-size:14px;margin-bottom:6px">${t.name}</div><div style="font-size:11px;color:var(--td);margin-bottom:10px;line-height:1.6">${t.desc}</div><button class="btn bp bsm" style="width:100%">⚡ Import</button>`;
     card.querySelector('button').onclick=async(e)=>{e.stopPropagation();const ir=await api('import_flow_template',{template:t.id});if(ir.ok){toast('Imported '+ir.id,'success');closeModal('m-flow-tpl');loadPages();}else toast(ir.error||'Error','error');};
     grid.appendChild(card);
   });
 }
+function openFlowQuickStart(){openModal('m-flow-quick');}
+async function finishFlowQuickStart(){
+  const id=(g('fq-id')?.value||'').trim().replace(/[^a-zA-Z0-9_]/g,'_');
+  const trig=(g('fq-trigger')?.value||'').trim();
+  const text=g('fq-text')?.value||'';
+  const type=g('fq-type')?.value||'text';
+  if(!id)return toast('Flow name required','error');
+  const d={id,trigger:trig,type,text,is_free_text:!trig,buttons:[]};
+  if(type==='wizard'){d.wizard_steps=[{var:'answer',text:text||'Step 1: Reply karo'}];d.wizard_final='✅ Done! {answer}';}
+  if(type==='api'){d.api_url='https://httpbin.org/get?q={query}';d.text='Result: {args.q}';d.msg_missing='🔍 Search term bhejo';}
+  const r=await api('save_page',d);
+  if(r.ok){toast('Flow created!','success');closeModal('m-flow-quick');loadPages();editPage(id);}
+  else toast(r.error||'Error','error');
+}
+window._flowView='cards';
+function setFlowView(v){
+  window._flowView=v;
+  g('fb-view-cards')?.classList.toggle('active',v==='cards');
+  g('fb-view-table')?.classList.toggle('active',v==='table');
+  g('fb-grid').style.display=v==='cards'?'grid':'none';
+  g('fb-table-wrap').style.display=v==='table'?'block':'none';
+}
+function flowHealth(c){
+  let score=0;if(c.text||c.wizard_steps?.length)score++;if(c.trigger||c.is_free_text)score++;if(c.type)score++;
+  return score>=2?'ok':'warn';
+}
+function flowFeatureTags(c){
+  const t=[];
+  if((c.flow_rules||[]).length)t.push('🔀 Logic');
+  if(c.webhook_enabled)t.push('🔗 Webhook');
+  if((c.rate_limit_max||0)>0)t.push('⏱ '+c.rate_limit_max+'/h');
+  if(c.subflow_before||c.subflow_after||c.include_page)t.push('📦 Sub');
+  if(c.type==='browser')t.push('🤖 Selenium');
+  return t;
+}
+function filterFlowList(){
+  const q=(g('fb-search')?.value||'').toLowerCase();
+  const typ=g('fb-filter-type')?.value||'';
+  window._flowFiltered=(window.PAGES||[]).filter(c=>{
+    if(typ&&c.type!==typ)return false;
+    if(!q)return true;
+    return (c.id||'').toLowerCase().includes(q)||(c.trigger||'').toLowerCase().includes(q)||(c.type||'').includes(q);
+  });
+  renderFlowList();
+}
+function renderFlowList(){
+  const list=window._flowFiltered||window.PAGES||[];
+  const b=g('cb'),grid=g('fb-grid');
+  const tm={text:'TEXT',api:'API',curl:'CURL',browser:'BROWSER',include:'INCLUDE',wizard:'WIZARD'};
+  if(b){
+    b.innerHTML='';
+    if(!list.length){b.innerHTML='<tr><td colspan="5" style="text-align:center;color:var(--td);padding:20px">Koi flow nahi mila</td></tr>';}
+    list.forEach(c=>{
+      const trig=c.is_free_text?`FREE · ${c.ft_chat_mode||'both'}`:'/'+(c.trigger||'—');
+      const feats=flowFeatureTags(c).map(t=>`<span class="badge bpv" style="font-size:8px">${t}</span>`).join(' ');
+      b.innerHTML+=`<tr>
+        <td><b style="color:var(--c);font-family:'Share Tech Mono';font-size:11px">${c.id}</b></td>
+        <td>${trig}</td>
+        <td><span class="badge bc">${tm[c.type]||c.type}</span></td>
+        <td>${feats||'—'}</td>
+        <td><button class="btn by bsm" onclick="editPage('${c.id}')">Edit</button> <button class="btn bc bsm" onclick="g('fs-page').value='${c.id}';openFlowSim();runFlowSim()">Test</button> <button class="btn bg bsm" onclick="dupPage('${c.id}')">Dup</button> <button class="btn bd bsm" onclick="if(confirm('Delete?'))api('delete_page',{id:'${c.id}'}).then(r=>{if(r.ok)loadPages();})">Del</button></td>
+      </tr>`;
+    });
+  }
+  if(grid){
+    grid.innerHTML='';
+    list.forEach(c=>{
+      const h=flowHealth(c);
+      const card=document.createElement('div');card.className='fb-card';
+      card.onclick=e=>{if(e.target.tagName!=='BUTTON')editPage(c.id);};
+      card.innerHTML=`<div class="fb-card-top"><div class="fb-card-id">${c.id}</div><span class="fb-health ${h}">${h==='ok'?'✓ Ready':'⚠ Setup'}</span></div>
+        <div class="fb-card-trig">${c.is_free_text?'💬 Free text':'⚡ /'+(c.trigger||'—')} · <span class="badge bc">${tm[c.type]||c.type}</span></div>
+        <div class="fb-card-tags">${flowFeatureTags(c).map(t=>`<span class="badge bpv" style="font-size:8px">${t}</span>`).join('')||'<span style="font-size:10px;color:var(--td)">Basic flow</span>'}</div>
+        <div class="fb-card-actions">
+          <button class="btn by bsm" onclick="editPage('${c.id}')">Edit</button>
+          <button class="btn bc bsm" onclick="g('fs-page').value='${c.id}';openFlowSim();runFlowSim()">Test</button>
+          <button class="btn bd bsm" onclick="if(confirm('Delete?'))api('delete_page',{id:'${c.id}'}).then(r=>{if(r.ok)loadPages();})">Del</button>
+        </div>`;
+      grid.appendChild(card);
+    });
+  }
+}
+function updateFlowStats(pages){
+  const p=pages||[];
+  if(g('fb-st-total'))g('fb-st-total').textContent=p.length;
+  if(g('fb-st-wiz'))g('fb-st-wiz').textContent=p.filter(x=>x.type==='wizard').length;
+  if(g('fb-st-wh'))g('fb-st-wh').textContent=p.filter(x=>x.webhook_enabled).length;
+  if(g('fb-st-rules'))g('fb-st-rules').textContent=p.filter(x=>(x.flow_rules||[]).length).length;
+  if(g('fb-st-browser'))g('fb-st-browser').textContent=p.filter(x=>x.type==='browser').length;
+}
 function openCmdModal(){
-  ['pb-id','pb-trigger','pb-ac','pb-fb','pb-media','pb-mmedia','pb-emedia','pb-vars','pb-apiurl','pb-root','pb-miss','pb-err','pb-text','pb-curl-url','pb-curl-h','pb-curl-b','pb-curl-rp','pb-cpaste','pb-ft-access','pb-docurl','pb-bv-names','pb-bv-done','pb-sticker-id','pb-include','pb-sf-before','pb-sf-after','pb-flow-desc','pb-wh-key','pb-wh-url','pb-wiz-final'].forEach(id=>{const el=g(id);if(el)el.value='';});
+  ['pb-id','pb-trigger','pb-ac','pb-media','pb-mmedia','pb-emedia','pb-vars','pb-apiurl','pb-root','pb-miss','pb-err','pb-text','pb-curl-url','pb-curl-h','pb-curl-b','pb-curl-rp','pb-cpaste','pb-ft-access','pb-docurl','pb-bv-names','pb-bv-done','pb-sticker-id','pb-flow-desc','pb-wh-key','pb-wh-url','pb-wiz-final'].forEach(id=>{const el=g(id);if(el)el.value='';});
   g('pb-type').value='text';if(g('pb-to'))g('pb-to').value='15';if(g('pb-curl-to'))g('pb-curl-to').value='120';if(g('pb-rl-max'))g('pb-rl-max').value='0';if(g('pb-rl-msg'))g('pb-rl-msg').value='⏳ Too many requests. Try again later.';
   ['pb-cr','pb-retry','pb-ccr','pb-ft-on','pb-ft-mention','pb-fj','pb-wh-on'].forEach(id=>{const el=g(id);if(el)el.checked=false;});
   if(g('pb-ft-chatmode'))g('pb-ft-chatmode').value='both';
@@ -9220,13 +9578,16 @@ function openCmdModal(){
   g('btnc').innerHTML='';g('lsc').innerHTML='';g('bsteps-c').innerHTML='';
   if(g('flow-rules-c'))g('flow-rules-c').innerHTML='';
   if(g('wiz-steps-c'))g('wiz-steps-c').innerHTML='';
-  onWhToggle();onType();openModal('m-builder');
+  switchPbTab('setup');syncTypeCards();refreshPagePickers('');
+  onWhToggle();onType();updatePbPreview();openModal('m-builder');
 }
 window.PAGES=[];
 function editPage(id){
   const c=window.PAGES.find(p=>p.id===id);if(!c)return;
+  refreshPagePickers(c.id);
   g('pb-id').value=c.id||'';g('pb-trigger').value=c.trigger||'';g('pb-type').value=c.type||'text';
-  g('pb-ac').value=c.access_control||'';g('pb-fb').value=c.fallback_page||'';
+  g('pb-ac').value=c.access_control||'';
+  if(g('pb-fb'))g('pb-fb').value=c.fallback_page||'';
   if(g('pb-cr'))g('pb-cr').checked=c.requires_credit||false;
   if(g('pb-ccr'))g('pb-ccr').checked=c.requires_credit||false;
   if(g('pb-fj'))g('pb-fj').checked=c.force_join||false;
@@ -9240,9 +9601,6 @@ function editPage(id){
   g('pb-curl-url').value=c.curl_url||'';g('pb-curl-m').value=c.curl_method||'POST';
   g('pb-curl-h').value=c.curl_headers||'';g('pb-curl-b').value=c.curl_body||'';g('pb-curl-rp').value=c.curl_response_path||'';
   if(g('pb-docurl'))g('pb-docurl').value=c.document_url||'';
-
-  // Browser fields
-
   if(g('pb-bv-names'))g('pb-bv-names').value=c.browser_var_names||'';
   if(g('pb-bv-done'))g('pb-bv-done').value=c.browser_done_msg||'✅ Done!';
   g('bsteps-c').innerHTML='';if(c.browser_steps)c.browser_steps.forEach(s=>addBrowserStep(s));
@@ -9270,28 +9628,20 @@ function editPage(id){
     const base=location.origin+location.pathname;
     g('pb-wh-url').value=base+'?page=flow_webhook&bot_id='+(typeof ACTIVE_BOT_ID!=='undefined'?ACTIVE_BOT_ID:'')+'&flow='+encodeURIComponent(c.id)+'&key='+encodeURIComponent(c.webhook_key)+'&chat_id=USER_ID&query=hello';
   }
-  onWhToggle();
-  onType();openModal('m-builder');
+  switchPbTab('setup');syncTypeCards();onWhToggle();onType();updatePbPreview();openModal('m-builder');
 }
 async function loadPages(){
-  const r=await api('get_pages');const b=g('cb');b.innerHTML='';window.PAGES=r.data||[];
-  if(!window.PAGES.length){b.innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--td);padding:16px">No pages yet. Click <b>+ New Page</b>.</td></tr>';return;}
-    const tm={text:'<span class="badge by">TEXT</span>',api:'<span class="badge bc">API</span>',curl:'<span class="badge bpv">CURL</span>',browser:'<span class="badge bg">BROWSER</span>',include:'<span class="badge bo">INCLUDE</span>',wizard:'<span class="badge bp">WIZARD</span>'};
-    window.PAGES.forEach(c=>{
-      const trigLabel=c.is_free_text
-        ?`<span class="badge bpv">FREE TEXT</span> <span style="font-size:10px;color:var(--p)">${c.ft_chat_mode||'both'}</span>`
-        :`<span class="badge ba">/${c.trigger||'—'}</span>`;
-      const rlBadge=(c.rate_limit_max||0)>0?`<span class="badge by" style="font-size:9px">${c.rate_limit_max}/h</span>`:'<span style="color:var(--tf);font-size:11px">—</span>';
-      const whBadge=c.webhook_enabled?'<span class="badge bc" style="font-size:9px">🔗</span>':'';
-      b.innerHTML+=`<tr>
-      <td><b style="color:var(--c);font-family:'Share Tech Mono';font-size:11px">${c.id}</b>${whBadge}</td>
-      <td>${trigLabel}</td>
-      <td>${tm[c.type]||c.type}</td>
-      <td>${c.requires_credit?'<span class="badge bi">Paid</span>':'<span class="badge ba">Free</span>'}</td>
-      <td>${rlBadge}</td>
-      <td><button class="btn by bsm" onclick="editPage('${c.id}')">Edit</button> <button class="btn bc bsm" onclick="g('fs-page').value='${c.id}';openFlowSim();runFlowSim()">Test</button> <button class="btn bg bsm" onclick="dupPage('${c.id}')">Dup</button> <button class="btn bd bsm" onclick="if(confirm('Delete?'))api('delete_page',{id:'${c.id}'}).then(r=>{if(r.ok)loadPages();})">Del</button></td>
-    </tr>`;
-  });
+  const r=await api('get_pages');window.PAGES=r.data||[];
+  updateFlowStats(window.PAGES);
+  refreshPagePickers('');
+  window._flowFiltered=window.PAGES.slice();
+  if(!window.PAGES.length){
+    if(g('cb'))g('cb').innerHTML='<tr><td colspan="5" style="text-align:center;color:var(--td);padding:20px">No flows yet — <b>Quick Start</b> dabao!</td></tr>';
+    if(g('fb-grid'))g('fb-grid').innerHTML='';
+    return;
+  }
+  setFlowView(window._flowView||'cards');
+  renderFlowList();
 }
 async function savePage(){
   try{
