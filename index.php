@@ -5205,7 +5205,9 @@ body.admin-app .main{height:100dvh;min-height:0;overflow:hidden;display:flex;fle
 .topbar{background:rgba(13,17,23,.95);border-bottom:1px solid var(--b);padding:0 18px;height:52px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:50;flex-shrink:0;}
 .con{padding:18px;flex:1;overflow-x:hidden;padding-top:18px;}
 body.admin-app .con{flex:1 1 auto;min-height:0;overflow:hidden;padding:0;display:flex;flex-direction:column;}
-body.admin-app .panel-viewport{flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;padding:18px;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;overflow-anchor:none;touch-action:pan-y;}
+body.admin-app .panel-viewport{flex:1 1 auto;min-height:0;overflow:hidden;position:relative;padding:0;}
+body.admin-app .panel{display:none;position:absolute;inset:0;overflow-y:auto;overflow-x:hidden;padding:18px;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;overflow-anchor:none;touch-action:pan-y;}
+body.admin-app .panel.active{display:block;}
 .panel{display:none;}.panel.active{display:block;}
 .card{background:var(--s);border:1px solid var(--b);border-radius:12px;padding:16px;margin-bottom:14px;width:100%;}
 .sh{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;}
@@ -5273,7 +5275,8 @@ td{padding:9px 11px;vertical-align:middle;}
   .sov.open{display:block;}
   .main{margin-left:0!important;width:100%!important;min-height:0!important;}
   body.admin-app .main{height:100dvh;min-height:0;overflow:hidden;}
-  body.admin-app .panel-viewport{padding:10px;-webkit-overflow-scrolling:touch;}
+  body.admin-app .panel-viewport{padding:0;}
+  body.admin-app .panel{padding:10px;-webkit-overflow-scrolling:touch;}
   .ham{display:block;}
   .fg{grid-template-columns:1fr;}
   .con{padding:10px;padding-top:10px;}
@@ -7668,20 +7671,25 @@ function g(id){return document.getElementById(id);}
 function toast(m,t='info'){const d=document.createElement('div');d.className='toast '+t;d.innerHTML=`<span style="color:var(--${t==='success'?'g':t==='error'?'r':t==='warn'?'y':'c'})">● </span>${m}`;g('tc').appendChild(d);setTimeout(()=>{d.style.opacity=0;d.style.transform='translateX(20px)';setTimeout(()=>d.remove(),300);},3000);}
 function openSb(){g('sb').classList.add('open');g('sov').classList.add('open');document.body.style.overflow='hidden';}
 function closeSb(){g('sb').classList.remove('open');g('sov').classList.remove('open');document.body.style.overflow=document.body.classList.contains('admin-app')?'hidden':'';}
-function scrollAppToTop(){
-  const vp=g('panel-viewport');
-  if(vp){vp.scrollTop=0;vp.scrollLeft=0;}
+function scrollPanelTop(id){
+  const p=id?g('p-'+id):document.querySelector('.panel.active');
+  if(p){p.scrollTop=0;p.scrollLeft=0;}
 }
 function nav(id,btn){
   document.querySelectorAll('.panel').forEach(p=>{p.classList.remove('active');p.scrollTop=0;});
   document.querySelectorAll('.ni').forEach(n=>n.classList.remove('active'));
   const panel=g('p-'+id);
   panel.classList.add('active');btn.classList.add('active');closeSb();
-  scrollAppToTop();
+  scrollPanelTop(id);
   const m={dash:()=>{loadDash();checkBot();loadLogs();},bots:loadBots,users:loadUsers,ukeys:loadUK,lkeys:loadLK,builder:loadPages,cfg:loadCfg,vault:loadVault,bvars:loadBV,dvars:loadDynVars,fj:loadFj,broadcast:()=>{dmLoadStickers();dmLoadEmojis();dmsLoadStickers();dmsLoadEmojis();},guide:()=>{},stickers:refreshStickers,forwards:refreshForwards,welcome:loadWelcome,tagger:()=>{loadTagger();utLoadEmojiPicker();},hiddeneye:loadHiddenEye,apkrenamer:apkrLoad,promobot:promoLoad,rosebot:roseLoad,linkautomation:laLoad,depositbot:rbdInit,linkrunner:lrInit,adharbot:adharBotInit};
   const run=m[id];
-  if(run){try{run();}catch(e){}}
-  requestAnimationFrame(scrollAppToTop);
+  if(run){
+    let ret;
+    try{ret=run();}catch(e){ret=null;}
+    if(ret&&typeof ret.then==='function')ret.finally(()=>scrollPanelTop(id));
+  }
+  requestAnimationFrame(()=>scrollPanelTop(id));
+  setTimeout(()=>scrollPanelTop(id),150);
 }
 function openModal(id){g(id).classList.add('open');document.body.style.overflow='hidden';const mb=g(id);if(mb)mb.scrollTop=0;}
 function closeModal(id){g(id).classList.remove('open');document.body.style.overflow=document.body.classList.contains('admin-app')?'hidden':'';}
