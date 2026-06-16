@@ -5305,7 +5305,7 @@ td{padding:9px 11px;vertical-align:middle;}
     <input type="hidden" name="<?=CSRF_TOKEN_NAME?>" value="<?=csrfToken()?>">
     <div class="fgrp" style="margin-bottom:9px"><input type="text" class="fi" name="user" placeholder="Username" required autocomplete="username"></div>
 
-    <div class="fgrp" style="margin-bottom:16px"><input type="password" class="fi" name="pass" placeholder="Password" required></div>
+    <div class="fgrp" style="margin-bottom:16px"><input type="password" class="fi" name="pass" placeholder="Password" required autocomplete="current-password"></div>
     <button type="submit" class="btn bp" style="width:100%">⚡ LOGIN</button>
   </form>
 </div></div>
@@ -6112,7 +6112,7 @@ td{padding:9px 11px;vertical-align:middle;}
 
   <!-- USERS -->
 
-  <div class="panel" id="p-users"><div class="card"><div class="sh"><div class="st">👥 USERS <span id="users-count" style="font-size:11px;color:var(--td)"></span></div><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><input class="fi" id="users-search" placeholder="Search name, ID, username..." style="width:200px;padding:6px 10px;font-size:12px" oninput="usersSearchDebounced()"><button class="btn bg bsm" onclick="loadUsers(1)">🔄</button><button class="btn bo bsm" onclick="repairUsers()" title="Fix missing users">🔧 Repair</button></div></div><div id="users-bot-hint" style="font-size:11px;color:var(--y);padding:0 0 8px;display:none"></div><div class="tr"><div class="tw"><table><thead><tr><th>Name</th><th>ID</th><th>Searches</th><th>Key</th><th>Status</th><th>Action</th></tr></thead><tbody id="ub"></tbody></table></div></div><div id="users-pager" style="display:flex;justify-content:space-between;align-items:center;padding:10px 0 0;gap:8px;flex-wrap:wrap"></div></div></div>
+  <div class="panel" id="p-users"><div class="card"><div class="sh"><div class="st">👥 USERS <span id="users-count" style="font-size:11px;color:var(--td)"></span></div><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><input type="search" class="fi" id="users-search" name="users_filter" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Search name, ID, username..." style="width:200px;padding:6px 10px;font-size:12px" readonly onfocus="this.removeAttribute('readonly')" oninput="this.dataset.touched='1';usersSearchDebounced()"><button class="btn bg bsm" onclick="loadUsers(1)">🔄</button><button class="btn bo bsm" onclick="repairUsers()" title="Fix missing users">🔧 Repair</button></div></div><div id="users-bot-hint" style="font-size:11px;color:var(--y);padding:0 0 8px;display:none"></div><div class="tr"><div class="tw"><table><thead><tr><th>Name</th><th>ID</th><th>Searches</th><th>Key</th><th>Status</th><th>Action</th></tr></thead><tbody id="ub"></tbody></table></div></div><div id="users-pager" style="display:flex;justify-content:space-between;align-items:center;padding:10px 0 0;gap:8px;flex-wrap:wrap"></div></div></div>
 
   <!-- USER KEYS -->
 
@@ -7720,8 +7720,12 @@ async function loadBots(){
 }
 async function addBot(){const t=g('abt').value.trim();if(!t)return;toast('Verifying...','info');const r=await api('add_bot',{token:t});if(r.ok){toast('✅ Bot Added!','success');closeModal('m-ab');g('abt').value='';loadBots();}else toast('Error: '+(r.error||'Invalid token'),'error');}
 
-let _usersPage=1,_usersSearchTimer=null,_usersReqId=0;
+let _usersPage=1,_usersSearchTimer=null,_usersReqId=0,_usersSearchInit=false;
 function usersEsc(s){return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');}
+function usersClearAutofill(){
+  const s=g('users-search');if(!s||s.dataset.touched)return;
+  if(!_usersSearchInit){_usersSearchInit=true;setTimeout(()=>{if(!s.dataset.touched)s.value='';},50);setTimeout(()=>{if(!s.dataset.touched)s.value='';},300);}
+}
 function usersSearchDebounced(){clearTimeout(_usersSearchTimer);_usersSearchTimer=setTimeout(()=>loadUsers(1),400);}
 function usersShowHint(msg){const h=g('users-bot-hint');if(h){h.style.display=msg?'block':'none';h.textContent=msg||'';}}
 async function repairUsers(){if(!ACTIVE_BOT_ID){toast('Pehle bot select karo','warn');return;}toast('Repairing users...','info');const r=await api('repair_users',{botId:ACTIVE_BOT_ID});if(r.ok){toast('✅ '+r.total+' users repaired','success');loadUsers(1);}else toast(r.error||'Repair failed','error');}
@@ -7733,6 +7737,7 @@ function renderUsersPager(total,page,pages,limit){
 }
 async function loadUsers(page){
   if(page!==undefined)_usersPage=Math.max(1,page);
+  usersClearAutofill();
   const b=g('ub');if(!b)return;
   const search=(g('users-search')?.value||'').trim();
   const reqId=++_usersReqId;
