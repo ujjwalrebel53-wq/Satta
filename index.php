@@ -5201,11 +5201,11 @@ body.admin-app .wrap{height:100dvh;min-height:100dvh;overflow:hidden;}
 .sb{width:240px;background:rgba(13,17,23,.99);border-right:1px solid var(--b);display:flex;flex-direction:column;position:fixed;top:0;left:0;bottom:0;z-index:10000;transition:transform .3s;overflow-y:auto;}
 .logo{display:flex;align-items:center;gap:12px;padding:18px 16px;border-bottom:1px solid var(--b);}
 .main{margin-left:240px;flex:1;display:flex;flex-direction:column;width:calc(100% - 240px);min-height:100vh;}
-body.admin-app .main{height:100dvh;min-height:100dvh;overflow:hidden;display:flex;flex-direction:column;}
+body.admin-app .main{height:100dvh;min-height:0;overflow:hidden;display:flex;flex-direction:column;}
 .topbar{background:rgba(13,17,23,.95);border-bottom:1px solid var(--b);padding:0 18px;height:52px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:50;flex-shrink:0;}
 .con{padding:18px;flex:1;overflow-x:hidden;padding-top:18px;}
-body.admin-app .con{flex:1 1 auto;min-height:0;overflow:hidden;padding:0;position:relative;}
-body.admin-app .panel-viewport{position:absolute;inset:0;overflow-y:auto;overflow-x:hidden;padding:18px;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;overflow-anchor:none;}
+body.admin-app .con{flex:1 1 auto;min-height:0;overflow:hidden;padding:0;display:flex;flex-direction:column;}
+body.admin-app .panel-viewport{flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;padding:18px;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;overflow-anchor:none;touch-action:pan-y;}
 .panel{display:none;}.panel.active{display:block;}
 .card{background:var(--s);border:1px solid var(--b);border-radius:12px;padding:16px;margin-bottom:14px;width:100%;}
 .sh{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;}
@@ -5266,13 +5266,14 @@ td{padding:9px 11px;vertical-align:middle;}
 /* FIX indicator box */
 .fix-note{background:rgba(57,255,20,.05);border:1px solid rgba(57,255,20,.3);border-radius:8px;padding:10px 12px;font-family:'Share Tech Mono';font-size:11px;color:var(--g);margin-bottom:12px;line-height:1.8;}
 @media(max-width:768px){
-  html,body{background:#030712!important;width:100vw;height:auto!important;}
+  html,body{background:#030712!important;width:100vw;}
+  body.admin-app,body.admin-app html{height:100dvh!important;overflow:hidden!important;}
   .sb{transform:translateX(-100%);box-shadow:4px 0 20px rgba(0,0,0,.8);}
   .sb.open{transform:translateX(0);}
   .sov.open{display:block;}
-  .main{margin-left:0!important;width:100%!important;min-height:100vh;}
-  body.admin-app .main{height:100dvh;min-height:100dvh;overflow:hidden;}
-  body.admin-app .panel-viewport{padding:10px;}
+  .main{margin-left:0!important;width:100%!important;min-height:0!important;}
+  body.admin-app .main{height:100dvh;min-height:0;overflow:hidden;}
+  body.admin-app .panel-viewport{padding:10px;-webkit-overflow-scrolling:touch;}
   .ham{display:block;}
   .fg{grid-template-columns:1fr;}
   .con{padding:10px;padding-top:10px;}
@@ -7669,12 +7670,7 @@ function openSb(){g('sb').classList.add('open');g('sov').classList.add('open');d
 function closeSb(){g('sb').classList.remove('open');g('sov').classList.remove('open');document.body.style.overflow=document.body.classList.contains('admin-app')?'hidden':'';}
 function scrollAppToTop(){
   const vp=g('panel-viewport');
-  const con=document.querySelector('.con');
-  const main=document.querySelector('.main');
-  document.querySelectorAll('.panel').forEach(p=>{p.scrollTop=0;});
   if(vp){vp.scrollTop=0;vp.scrollLeft=0;}
-  [con,main,document.documentElement,document.body].forEach(el=>{if(!el)return;el.scrollTop=0;el.scrollLeft=0;});
-  window.scrollTo(0,0);
 }
 function nav(id,btn){
   document.querySelectorAll('.panel').forEach(p=>{p.classList.remove('active');p.scrollTop=0;});
@@ -7682,19 +7678,13 @@ function nav(id,btn){
   const panel=g('p-'+id);
   panel.classList.add('active');btn.classList.add('active');closeSb();
   scrollAppToTop();
-  requestAnimationFrame(()=>{scrollAppToTop();requestAnimationFrame(scrollAppToTop);});
   const m={dash:()=>{loadDash();checkBot();loadLogs();},bots:loadBots,users:loadUsers,ukeys:loadUK,lkeys:loadLK,builder:loadPages,cfg:loadCfg,vault:loadVault,bvars:loadBV,dvars:loadDynVars,fj:loadFj,broadcast:()=>{dmLoadStickers();dmLoadEmojis();dmsLoadStickers();dmsLoadEmojis();},guide:()=>{},stickers:refreshStickers,forwards:refreshForwards,welcome:loadWelcome,tagger:()=>{loadTagger();utLoadEmojiPicker();},hiddeneye:loadHiddenEye,apkrenamer:apkrLoad,promobot:promoLoad,rosebot:roseLoad,linkautomation:laLoad,depositbot:rbdInit,linkrunner:lrInit,adharbot:adharBotInit};
   const run=m[id];
-  if(run){
-    let ret;
-    try{ret=run();}catch(e){ret=null;}
-    if(ret&&typeof ret.then==='function'){
-      ret.finally(()=>{scrollAppToTop();requestAnimationFrame(scrollAppToTop);setTimeout(scrollAppToTop,80);});
-    }else{setTimeout(scrollAppToTop,0);setTimeout(scrollAppToTop,120);setTimeout(scrollAppToTop,350);}
-  }else setTimeout(scrollAppToTop,0);
+  if(run){try{run();}catch(e){}}
+  requestAnimationFrame(scrollAppToTop);
 }
 function openModal(id){g(id).classList.add('open');document.body.style.overflow='hidden';const mb=g(id);if(mb)mb.scrollTop=0;}
-function closeModal(id){g(id).classList.remove('open');document.body.style.overflow='';}
+function closeModal(id){g(id).classList.remove('open');document.body.style.overflow=document.body.classList.contains('admin-app')?'hidden':'';}
 async function api(action,data={}){try{const r=await fetch(A+action,{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':CSRF_TOKEN},body:JSON.stringify(data)});return await r.json();}catch(e){return{ok:false,error:e.message};}}
 function tup(tid){g('cut').value=tid;g('fup').click();}
 async function handleUp(inp){
@@ -7743,28 +7733,26 @@ async function loadUsers(page){
   const reqId=++_usersReqId;
   usersShowHint('');
   if(!ACTIVE_BOT_ID){
-    scrollAppToTop();
     b.innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--td);padding:16px">Loading bot...</td></tr>';
     if(!(await ensureActiveBot())){
       b.innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--y);padding:16px">⚠️ Koi bot select nahi hai.<br><br><b>Bots</b> tab me jao aur apne bot pe <b>✅ Select</b> dabao.</td></tr>';
-      renderUsersPager(0,1,1,30);if(g('users-count'))g('users-count').textContent='';scrollAppToTop();return;
+      renderUsersPager(0,1,1,30);if(g('users-count'))g('users-count').textContent='';return;
     }
   }
   usersShowHint('Active bot: '+ACTIVE_BOT_NAME);
   b.innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--td);padding:16px">Loading...</td></tr>';
-  scrollAppToTop();
   let r;
   try{
     const res=await fetch(A+'get_users',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':CSRF_TOKEN},body:JSON.stringify({page:_usersPage,limit:30,search,botId:ACTIVE_BOT_ID})});
     if(reqId!==_usersReqId)return;
     const txt=await res.text();
-    try{r=JSON.parse(txt);}catch(e){b.innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--r);padding:16px">Server error — 🔧 Repair try karo</td></tr>';scrollAppToTop();return;}
-  }catch(e){if(reqId!==_usersReqId)return;b.innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--r);padding:16px">Network error</td></tr>';scrollAppToTop();return;}
+    try{r=JSON.parse(txt);}catch(e){b.innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--r);padding:16px">Server error — 🔧 Repair try karo</td></tr>';return;}
+  }catch(e){if(reqId!==_usersReqId)return;b.innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--r);padding:16px">Network error</td></tr>';return;}
   const cnt=g('users-count');const limit=r.limit||30;
-  if(!r.ok){b.innerHTML=`<tr><td colspan="6" style="text-align:center;color:var(--r);padding:16px">${usersEsc(r.error||'Failed to load users')}</td></tr>`;renderUsersPager(0,1,1,limit);if(cnt)cnt.textContent='';scrollAppToTop();return;}
+  if(!r.ok){b.innerHTML=`<tr><td colspan="6" style="text-align:center;color:var(--r);padding:16px">${usersEsc(r.error||'Failed to load users')}</td></tr>`;renderUsersPager(0,1,1,limit);if(cnt)cnt.textContent='';return;}
   const total=r.total||0;
   if(cnt)cnt.textContent=total?`(${total})`:'';
-  if(!r.data?.length){b.innerHTML=`<tr><td colspan="6" style="text-align:center;color:var(--td);padding:16px">${search?'No users match search':total?'No users on this page':'No users yet — 🔧 Repair try karo'}</td></tr>`;renderUsersPager(total,r.page||1,r.pages||1,limit);scrollAppToTop();return;}
+  if(!r.data?.length){b.innerHTML=`<tr><td colspan="6" style="text-align:center;color:var(--td);padding:16px">${search?'No users match search':total?'No users on this page':'No users yet — 🔧 Repair try karo'}</td></tr>`;renderUsersPager(total,r.page||1,r.pages||1,limit);return;}
   const rows=r.data.map(u=>{
     const id=usersEsc(u.id);const name=usersEsc(u.name||'?');const key=usersEsc(u.key||'—');
     const left=u.searchesLeft==999999?'∞':(u.searchesLeft||0);
@@ -7773,8 +7761,6 @@ async function loadUsers(page){
   }).join('');
   b.innerHTML=rows;
   renderUsersPager(total,r.page||1,r.pages||1,limit);
-  scrollAppToTop();
-  requestAnimationFrame(scrollAppToTop);
 }
 async function loadUK(){const r=await api('get_ukeys');const b=g('ukb');b.innerHTML='';if(!r.data?.length){b.innerHTML='<tr><td colspan="5" style="text-align:center;color:var(--td);padding:12px">None</td></tr>';return;}r.data.forEach(k=>b.innerHTML+=`<tr><td style="color:var(--c);font-family:'Share Tech Mono';font-size:11px">${k.key}</td><td>${k.searches}</td><td style="font-size:11px">${k.expires||'Never'}</td><td><span class="badge ${k.status==='active'?'ba':'bi'}">${k.status}</span></td><td><button class="btn bd bsm" onclick="api('delete_ukey',{id:'${k.id}'}).then(loadUK)">Del</button></td></tr>`);}
 async function loadLK(){const r=await api('get_lkeys');const b=g('lkb');b.innerHTML='';if(!r.data?.length){b.innerHTML='<tr><td colspan="5" style="text-align:center;color:var(--td);padding:12px">None</td></tr>';return;}r.data.forEach(k=>b.innerHTML+=`<tr><td style="color:var(--c);font-family:'Share Tech Mono';font-size:11px">${k.key}</td><td><span class="badge bc">${k.tier||'STD'}</span></td><td>${k.searches}</td><td><span class="badge ${k.status==='active'?'ba':'bi'}">${k.status}</span></td><td><button class="btn bd bsm" onclick="api('delete_lkey',{id:'${k.id}'}).then(loadLK)">Del</button></td></tr>`);}
