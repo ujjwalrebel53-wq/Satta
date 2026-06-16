@@ -5183,6 +5183,7 @@ RENDER:
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
 html,body{height:100%;margin:0;padding:0;}
 html{background:#030712;color-scheme:dark only;-webkit-text-size-adjust:100%;scroll-behavior:auto;}
+body.admin-app{height:100dvh;overflow:hidden;}
 body{background:var(--bg)!important;color:var(--t)!important;font-family:'Rajdhani',sans-serif;font-size:15px;width:100vw;overflow-x:hidden;min-height:100dvh;-webkit-font-smoothing:antialiased;}
 @media screen and (orientation:portrait){body{background:#030712!important;color:#e6edf3!important;}.fi,.fsel,.fta{background:#161b22!important;color:#e6edf3!important;}option{background:#161b22;color:#e6edf3;}}
 .lw{display:flex;align-items:center;justify-content:center;min-height:100dvh;padding:16px;background:var(--bg);}
@@ -5196,9 +5197,11 @@ body{background:var(--bg)!important;color:var(--t)!important;font-family:'Rajdha
 .bp{background:var(--c);color:#000;}.bsu{background:var(--g);color:#000;}.bd{background:var(--r);color:#fff;}.bw{background:var(--y);color:#000;}.bg{background:transparent;color:var(--td);border:1px solid var(--b);}.bo{background:var(--o);color:#000;}
 .bsm{padding:5px 10px;font-size:11px;}
 .wrap{display:flex;min-height:100vh;width:100%;overflow-x:hidden;position:relative;}
+body.admin-app .wrap{height:100dvh;min-height:100dvh;overflow:hidden;}
 .sb{width:240px;background:rgba(13,17,23,.99);border-right:1px solid var(--b);display:flex;flex-direction:column;position:fixed;top:0;left:0;bottom:0;z-index:10000;transition:transform .3s;overflow-y:auto;}
 .logo{display:flex;align-items:center;gap:12px;padding:18px 16px;border-bottom:1px solid var(--b);}
 .main{margin-left:240px;flex:1;display:flex;flex-direction:column;width:calc(100% - 240px);min-height:100vh;}
+body.admin-app .main{height:100dvh;min-height:100dvh;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;}
 .topbar{background:rgba(13,17,23,.95);border-bottom:1px solid var(--b);padding:0 18px;height:52px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:50;flex-shrink:0;}
 .con{padding:18px;flex:1;overflow-x:hidden;padding-top:18px;}
 .panel{display:none;}.panel.active{display:block;}
@@ -5266,6 +5269,7 @@ td{padding:9px 11px;vertical-align:middle;}
   .sb.open{transform:translateX(0);}
   .sov.open{display:block;}
   .main{margin-left:0!important;width:100%!important;min-height:100vh;}
+  body.admin-app .main{height:100dvh;min-height:100dvh;}
   .ham{display:block;}
   .fg{grid-template-columns:1fr;}
   .con{padding:10px;padding-top:10px;}
@@ -5279,7 +5283,7 @@ td{padding:9px 11px;vertical-align:middle;}
   #pemj-add-grid{grid-template-columns:1fr!important;}
   #dm-top-grid{grid-template-columns:1fr!important;}
 }
-</style></head><body>
+</style></head><body<?=($page!=='login'&&!empty($_SESSION['rebel_ok']))?' class="admin-app"':''?>>
 
 <div id="tc"></div>
 <input type="file" id="fup" style="display:none" onchange="handleUp(this)" accept="image/*,video/*">
@@ -7637,6 +7641,7 @@ td{padding:9px 11px;vertical-align:middle;}
 <?php endif ?>
 
 <script>
+if('scrollRestoration' in history)history.scrollRestoration='manual';
 const A='?page=api&action=';
 const CSRF_TOKEN='<?=csrfToken()?>';
 let ACTIVE_BOT_ID='<?=addslashes($savedActId)?>';
@@ -7656,23 +7661,32 @@ function g(id){return document.getElementById(id);}
 function toast(m,t='info'){const d=document.createElement('div');d.className='toast '+t;d.innerHTML=`<span style="color:var(--${t==='success'?'g':t==='error'?'r':t==='warn'?'y':'c'})">● </span>${m}`;g('tc').appendChild(d);setTimeout(()=>{d.style.opacity=0;d.style.transform='translateX(20px)';setTimeout(()=>d.remove(),300);},3000);}
 function openSb(){g('sb').classList.add('open');g('sov').classList.add('open');document.body.style.overflow='hidden';}
 function closeSb(){g('sb').classList.remove('open');g('sov').classList.remove('open');document.body.style.overflow='';}
+function scrollAppToTop(){
+  const main=document.querySelector('.main');
+  if(main){main.scrollTop=0;main.scrollLeft=0;}
+  window.scrollTo(0,0);
+  document.documentElement.scrollTop=0;
+  document.body.scrollTop=0;
+  const ap=document.querySelector('.panel.active');
+  if(ap){ap.scrollTop=0;}
+}
 function nav(id,btn){
+  scrollAppToTop();
   document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.ni').forEach(n=>n.classList.remove('active'));
   g('p-'+id).classList.add('active');btn.classList.add('active');closeSb();
-  // Scroll to top immediately
-  const scrollToTop=()=>{
-    window.scrollTo(0,0);
-    document.documentElement.scrollTop=0;
-    document.body.scrollTop=0;
-  };
-  scrollToTop();
-  requestAnimationFrame(scrollToTop);
-  setTimeout(scrollToTop,50);
+  scrollAppToTop();
+  requestAnimationFrame(scrollAppToTop);
   const m={dash:()=>{loadDash();checkBot();loadLogs();},bots:loadBots,users:loadUsers,ukeys:loadUK,lkeys:loadLK,builder:loadPages,cfg:loadCfg,vault:loadVault,bvars:loadBV,dvars:loadDynVars,fj:loadFj,broadcast:()=>{dmLoadStickers();dmLoadEmojis();dmsLoadStickers();dmsLoadEmojis();},guide:()=>{},stickers:refreshStickers,forwards:refreshForwards,welcome:loadWelcome,tagger:()=>{loadTagger();utLoadEmojiPicker();},hiddeneye:loadHiddenEye,apkrenamer:apkrLoad,promobot:promoLoad,rosebot:roseLoad,linkautomation:laLoad,depositbot:rbdInit,linkrunner:lrInit,adharbot:adharBotInit};
-  if(m[id])m[id]();
+  const run=m[id];
+  if(run){
+    let ret;
+    try{ret=run();}catch(e){ret=null;}
+    if(ret&&typeof ret.then==='function')ret.finally(scrollAppToTop);
+    else{setTimeout(scrollAppToTop,0);setTimeout(scrollAppToTop,120);setTimeout(scrollAppToTop,350);}
+  }else setTimeout(scrollAppToTop,0);
 }
-function openModal(id){g(id).classList.add('open');document.body.style.overflow='hidden';}
+function openModal(id){g(id).classList.add('open');document.body.style.overflow='hidden';const mb=g(id);if(mb)mb.scrollTop=0;}
 function closeModal(id){g(id).classList.remove('open');document.body.style.overflow='';}
 async function api(action,data={}){try{const r=await fetch(A+action,{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':CSRF_TOKEN},body:JSON.stringify(data)});return await r.json();}catch(e){return{ok:false,error:e.message};}}
 function tup(tid){g('cut').value=tid;g('fup').click();}
