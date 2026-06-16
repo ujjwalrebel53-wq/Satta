@@ -70,6 +70,117 @@ function verifyCsrf(){
     return isset($_SESSION[CSRF_TOKEN_NAME])&&hash_equals($_SESSION[CSRF_TOKEN_NAME],$tok);
 }
 
+define('ADMIN_SETTINGS_FILE',__DIR__.'/.admin_settings.json');
+define('ADMIN_AUDIT_FILE',__DIR__.'/.admin_audit.json');
+function loadAdminSettings(){
+    $def=['cron_secret'=>bin2hex(random_bytes(16)),'api_tokens'=>[],'telegram_2fa'=>['enabled'=>false,'admin_chat_id'=>''],'geo_block'=>['enabled'=>false,'countries'=>[]],'offline_alert'=>['enabled'=>true,'interval'=>3600]];
+    if(!file_exists(ADMIN_SETTINGS_FILE)){saveAdminSettings($def);return $def;}
+    $d=json_decode(file_get_contents(ADMIN_SETTINGS_FILE),true);
+    return is_array($d)?array_replace_recursive($def,$d):$def;
+}
+function saveAdminSettings($d){file_put_contents(ADMIN_SETTINGS_FILE,json_encode($d,JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE),LOCK_EX);}
+function auditLog($action,$detail='',$type='info'){
+    $l=file_exists(ADMIN_AUDIT_FILE)?json_decode(file_get_contents(ADMIN_AUDIT_FILE),true):[];
+    if(!is_array($l))$l=[];
+    array_unshift($l,['time'=>date('c'),'action'=>$action,'detail'=>$detail,'type'=>$type,'ip'=>$_SERVER['HTTP_CF_CONNECTING_IP']??$_SERVER['REMOTE_ADDR']??'']);
+    if(count($l)>500)$l=array_slice($l,0,500);
+    file_put_contents(ADMIN_AUDIT_FILE,json_encode($l,JSON_UNESCAPED_UNICODE),LOCK_EX);
+}
+function bumpAnalytics($botId,$kind='cmd',$pageId=''){
+    $db=loadDB($botId);
+    if(!isset($db['analytics']))$db['analytics']=['daily'=>[],'page_hits'=>[],'browser_runs'=>0];
+    $day=date('Y-m-d');
+    if(!isset($db['analytics']['daily'][$day]))$db['analytics']['daily'][$day]=['cmds'=>0,'searches'=>0];
+    if($kind==='cmd')$db['analytics']['daily'][$day]['cmds']++;
+    if($kind==='search')$db['analytics']['daily'][$day]['searches']++;
+    if($pageId)$db['analytics']['page_hits'][$pageId]=($db['analytics']['page_hits'][$pageId]??0)+1;
+    if($kind==='browser')$db['analytics']['browser_runs']=($db['analytics']['browser_runs']??0)+1;
+    saveDB($botId,$db);
+}
+function saveBrowserDebug($botId,$uid,$pageId,$res){
+    $f=getBotDir($botId).'browser_debug.json';
+    $l=file_exists($f)?json_decode(file_get_contents($f),true):[];
+    if(!is_array($l))$l=[];
+    array_unshift($l,['time'=>date('c'),'user'=>(string)$uid,'page'=>$pageId,'status'=>$res['status']??'?','error'=>$res['error']??'','steps'=>count($res['steps']??[])]);
+    if(count($l)>80)$l=array_slice($l,0,80);
+    file_put_contents($f,json_encode($l,JSON_UNESCAPED_UNICODE),LOCK_EX);
+}
+function saveFlowVersion($botId,$page){
+    if(empty($page['id']))return;
+    $dir=getBotDir($botId).'flow_versions/';if(!is_dir($dir))@mkdir($dir,0755,true);
+    $pid=preg_replace('/[^a-zA-Z0-9_]/','_',$page['id']);
+    $histFile=$dir.$pid.'.json';
+    $hist=file_exists($histFile)?json_decode(file_get_contents($histFile),true):[];
+    if(!is_array($hist))$hist=[];
+    array_unshift($hist,['saved'=>date('c'),'page'=>$page]);
+    if(count($hist)>5)$hist=array_slice($hist,0,5);
+    file_put_contents($histFile,json_encode($hist,JSON_UNESCAPED_UNICODE),LOCK_EX);
+}
+function getBroadcastTargets($db,$segment='all'){
+    $out=[];$now=time();
+    foreach($db['users']??[] as $uid=>$u){
+        if(!empty($u['banned']))continue;
+        if($segment==='active7'){ $ls=strtotime($u['last_seen']??$u['joined']??''); if($ls && $ls<$now-604800)continue; }
+        if($segment==='has_key'&&empty($u['key']))continue;
+        if($segment==='no_key'&&!empty($u['key']))continue;
+        $out[(string)$uid]=true;
+    }
+    return array_keys($out);
+}
+function sendBroadcastToTargets($targets,$msg,$media,$token){
+    $sent=0;$fail=0;
+    foreach($targets as $tuid){
+        if(!empty($media)){$lm=strtolower($media);$isAnim=str_ends_with($lm,'.gif')||str_ends_with($lm,'.mp4');$pm=['chat_id'=>$tuid,'caption'=>$msg,'parse_mode'=>'HTML'];$pm[$isAnim?'animation':'photo']=$media;$r=tg($isAnim?'sendAnimation':'sendPhoto',$pm,$token);if(!($r['ok']??false))$r=tg('sendMessage',['chat_id'=>$tuid,'text'=>$msg,'parse_mode'=>'HTML'],$token);}
+        else $r=tg('sendMessage',['chat_id'=>$tuid,'text'=>$msg,'parse_mode'=>'HTML'],$token);
+        if($r['ok']??false)$sent++;else $fail++;
+        usleep(50000);
+    }
+    return ['sent'=>$sent,'failed'=>$fail];
+}
+function runScheduledBroadcasts(){
+    foreach(loadBots() as $b){
+        $id=$b['id'];$tok=trim($b['token']??'');if(!$tok)continue;
+        $db=loadDB($id);$sched=$db['settings']['scheduled_broadcasts']??[];if(empty($sched))continue;
+        $changed=false;
+        foreach($sched as $i=>$job){
+            if(empty($job['enabled']))continue;
+            $runAt=strtotime($job['run_at']??'');if(!$runAt||$runAt>time())continue;
+            $targets=getBroadcastTargets($db,$job['segment']??'all');
+            $r=sendBroadcastToTargets($targets,$job['message']??'',$job['media']??'',$tok);
+            addLog($id,'Scheduled broadcast: '.$r['sent'].' sent, '.$r['failed'].' failed','info');
+            auditLog('scheduled_broadcast','bot='.$id.' sent='.$r['sent'],'info');
+            if(($job['repeat']??'')==='daily')$sched[$i]['run_at']=date('Y-m-d H:i:s',$runAt+86400);
+            else $sched[$i]['enabled']=false;
+            $changed=true;
+        }
+        if($changed){$db['settings']['scheduled_broadcasts']=$sched;saveDB($id,$db);}
+    }
+}
+function verifyExtApiToken($token){
+    if(!$token)return false;
+    $s=loadAdminSettings();
+    foreach($s['api_tokens']??[] as $t){if(hash_equals($t['token']??'',$token)&&empty($t['revoked']))return true;}
+    return false;
+}
+function isGeoBlocked(){
+    $s=loadAdminSettings();$gb=$s['geo_block']??[];
+    if(empty($gb['enabled']))return false;
+    $cc=strtoupper(trim($_SERVER['HTTP_CF_IPCOUNTRY']??''));
+    if(!$cc)return false;
+    $blocked=array_map('strtoupper',$gb['countries']??[]);
+    return in_array($cc,$blocked,true);
+}
+function sendAdminOtp($code){
+    $s=loadAdminSettings();$cid=trim($s['telegram_2fa']['admin_chat_id']??'');if(!$cid)return false;
+    $bots=loadBots();$tok='';
+    foreach($bots as $b){if(!empty($b['token'])&&($b['id']??'')===($_SESSION['act']??'')){$tok=$b['token'];break;}}
+    if(!$tok&&count($bots))$tok=$bots[0]['token']??'';
+    if(!$tok)return false;
+    $r=tg('sendMessage',['chat_id'=>$cid,'text'=>"🔐 <b>REBEL ADMIN LOGIN</b>\n\nYour OTP: <code>$code</code>\nValid 5 minutes.",'parse_mode'=>'HTML'],$tok);
+    return !empty($r['ok']);
+}
+function csvEsc($v){$v=str_replace('"','""',(string)$v);return '"'.$v.'"';}
+
 function loadBots(){return file_exists(MASTER_FILE)?(json_decode(file_get_contents(MASTER_FILE),true)?:[]):[];}
 function saveBots($b){file_put_contents(MASTER_FILE,json_encode($b,JSON_PRETTY_PRINT),LOCK_EX);}
 function getBotDir($id){$d=BOTS_DIR.preg_replace('/[^a-zA-Z0-9_]/','_',$id).'/';if(!is_dir($d)){@mkdir($d,0755,true);@mkdir($d.'uploads/',0755,true);}return $d;}
@@ -1650,6 +1761,8 @@ function execBrowser($botId,$chatId,$msgId,$u,&$db,$s,$query,$p,$token,$extraVar
     }
     $st=$res['status']??'done';
     addLog($botId,"Browser ".strtoupper($st)." [{$pgId}]: $query",$st==='done'?'success':'warn');
+    saveBrowserDebug($botId,$uid,$pgId,$res??[]);
+    bumpAnalytics($botId,'browser',$pgId);
     deleteBrowserSession($botId,$uid,$pgId);
     @unlink($resFile);
 }
@@ -3870,6 +3983,7 @@ if(isset($_GET['webhook_bot'])){
 
                 if(!empty($p['is_free_text']))continue;
                 if(strtolower(trim($p['trigger']??''))!==strtolower($cmdStr))continue;
+                bumpAnalytics($botId,'cmd',$p['id']??'');
                 if(!empty($p['force_join'])&&!empty($fj['enabled'])){
                     if(!checkForceJoin($uid,$fj,$token)){sendForceJoinMsg($chatId,$fj,$token);http_response_code(200);exit;}
                 }
@@ -4293,6 +4407,37 @@ if(isset($_GET['lr_run'])){
     echo json_encode(['ok'=>true,'results'=>$lrRes2,'total'=>count($lrRes2),'success'=>count(array_filter($lrRes2,fn($r)=>!$r['failed']))]);exit;
 }
 
+$pageEarly=san($_GET['page']??'panel');
+if($pageEarly==='cron'){
+    $as=loadAdminSettings();
+    $sec=$_GET['key']??'';
+    if(!$sec||!hash_equals($as['cron_secret']??'',$sec)){http_response_code(403);exit('Forbidden');}
+    runScheduledBroadcasts();
+    header('Content-Type:text/plain');echo 'OK '.date('c');exit;
+}
+if($pageEarly==='ext_api'){
+    header('Content-Type:application/json');
+    $tok=$_GET['token']??($_SERVER['HTTP_AUTHORIZATION']??'');
+    $tok=preg_replace('/^Bearer\s+/i','',$tok);
+    if(!verifyExtApiToken($tok)){http_response_code(401);echo json_encode(['ok'=>false,'error'=>'Invalid token']);exit;}
+    $extAct=preg_replace('/[^a-zA-Z0-9_]/','',$_GET['action']??'');
+    $extBotId=san($_GET['bot_id']??'');
+    if($extBotId){foreach(loadBots() as $eb){if($eb['id']===$extBotId){$extDb=loadDB($extBotId);break;}}}
+    switch($extAct){
+        case 'stats':
+            $extDb=null;
+            if($extBotId){$extDb=loadDB($extBotId);}
+            if(!$extDb){echo json_encode(['ok'=>false,'error'=>'bot_id required']);exit;}
+            echo json_encode(['ok'=>true,'data'=>['users'=>loadUsersIndex($extBotId)['total']??0,'searches'=>$extDb['stats']['searches']??0,'cmds'=>$extDb['stats']['cmds']??0]]);exit;
+        case 'health':
+            $bid=$extBotId?:((loadBots()[0]['id']??''));
+            $bt='';foreach(loadBots() as $eb){if($eb['id']===$bid){$bt=$eb['token']??'';break;}}
+            $wh=$bt?tg('getWebhookInfo',[],$bt):[];
+            echo json_encode(['ok'=>true,'webhook'=>!empty($wh['result']['url']),'url'=>$wh['result']['url']??null]);exit;
+        default:echo json_encode(['ok'=>false,'error'=>'Unknown action']);exit;
+    }
+}
+
 if(session_status()===PHP_SESSION_NONE){session_start();}
 $savedActId=$_SESSION['act']??'';
 $actName='No bot selected';
@@ -4302,6 +4447,7 @@ function jout($d){header('Content-Type: application/json');echo json_encode($d);
 $page=san($_GET['page']??'panel');
 $action=preg_replace('/[^a-zA-Z0-9_]/','',($_POST['action']??$_GET['action']??''));
 if($page==='login'){
+    if(isGeoBlocked()){$loginErr='Access blocked from your region.';goto RENDER;}
     if($_SERVER['REQUEST_METHOD']==='POST'){
         $clientIp=$_SERVER['HTTP_CF_CONNECTING_IP']??$_SERVER['HTTP_X_REAL_IP']??$_SERVER['REMOTE_ADDR']??'unknown';
         $lockedSecs=getLoginLockedSecs($clientIp);
@@ -4311,9 +4457,20 @@ if($page==='login'){
             $loginErr='Invalid security token. Please refresh and try again.';
         }elseif(($_POST['user']??'')===ADMIN_USER&&verifyAdminPassword($_POST['pass']??'')){
             clearLoginFails($clientIp);
-            session_regenerate_id(true);
-            $_SESSION['rebel_ok']=true;
-            header('Location: ?page=panel');exit;
+            $as=loadAdminSettings();
+            if(!empty($as['telegram_2fa']['enabled'])&&trim($as['telegram_2fa']['admin_chat_id']??'')){
+                $otp=(string)random_int(100000,999999);
+                $_SESSION['2fa_pending']=password_hash($otp,PASSWORD_DEFAULT);
+                $_SESSION['2fa_exp']=time()+300;
+                if(sendAdminOtp($otp)){session_regenerate_id(true);header('Location: ?page=verify_2fa');exit;}
+                $loginErr='Could not send Telegram OTP. Check bot token & admin chat ID in Security.';
+            }else{
+                clearLoginFails($clientIp);
+                session_regenerate_id(true);
+                $_SESSION['rebel_ok']=true;
+                auditLog('login','Admin logged in','success');
+                header('Location: ?page=panel');exit;
+            }
         }else{
             recordLoginFail($clientIp);
             $loginErr='Wrong credentials!';
@@ -4321,8 +4478,23 @@ if($page==='login'){
     }
     goto RENDER;
 }
+if($page==='verify_2fa'){
+    if(empty($_SESSION['2fa_pending'])){header('Location: ?page=login');exit;}
+    if($_SERVER['REQUEST_METHOD']==='POST'){
+        $code=trim($_POST['otp']??'');
+        if(time()>($_SESSION['2fa_exp']??0)){$loginErr='OTP expired. Login again.';unset($_SESSION['2fa_pending'],$_SESSION['2fa_exp']);header('Location: ?page=login');exit;}
+        if(password_verify($code,$_SESSION['2fa_pending'])){
+            unset($_SESSION['2fa_pending'],$_SESSION['2fa_exp']);
+            $_SESSION['rebel_ok']=true;
+            auditLog('login_2fa','Admin verified OTP','success');
+            header('Location: ?page=panel');exit;
+        }
+        $loginErr='Invalid OTP code.';
+    }
+    goto RENDER;
+}
 if($page==='logout'){session_unset();session_destroy();header('Location: ?page=login');exit;}
-if(empty($_SESSION['rebel_ok'])){header('Location: ?page=login');exit;}
+if($page!=='login'&&$page!=='verify_2fa'&&empty($_SESSION['rebel_ok'])){header('Location: ?page=login');exit;}
 if(empty($_SESSION['act'])){
     $_botsAuto=loadBots();
     if(!empty($_botsAuto))$_SESSION['act']=$_botsAuto[0]['id'];
@@ -4500,9 +4672,15 @@ if($page==='api'){
             if(!$actId)jout(['ok'=>false,'error'=>'No Bot']);
             $np=['id'=>strtolower(preg_replace('/[^a-zA-Z0-9_]/','_',$body['id']?:uniqid('pg_'))),'trigger'=>strtolower(preg_replace('/[^a-zA-Z0-9_]/','_',$body['trigger']??'')),'type'=>$body['type']??'text','is_free_text'=>(bool)($body['is_free_text']??false),'ft_chat_mode'=>$body['ft_chat_mode']??'both','ft_mention_only'=>(bool)($body['ft_mention_only']??false),'ft_access_control'=>$body['ft_access_control']??'','force_join'=>(bool)($body['force_join']??false),'access_control'=>$body['access_control']??'','fallback_page'=>$body['fallback_page']??'','requires_credit'=>(bool)($body['requires_credit']??false),'media_main'=>$body['media_main']??'','media_missing'=>$body['media_missing']??'','media_error'=>$body['media_error']??'','document_url'=>$body['document_url']??'','custom_vars'=>$body['custom_vars']??'','text'=>$body['text']??'','api_url'=>$body['api_url']??'','json_root'=>$body['json_root']??'','not_found'=>$body['not_found']??'','msg_missing'=>$body['msg_missing']??'','msg_loading'=>$body['msg_loading']??'','loading_steps'=>$body['loading_steps']??[],'api_timeout'=>(int)($body['api_timeout']??15),'api_retry'=>(bool)($body['api_retry']??false),'buttons'=>$body['buttons']??[],'curl_url'=>$body['curl_url']??'','curl_method'=>$body['curl_method']??'POST','curl_headers'=>$body['curl_headers']??'','curl_body'=>$body['curl_body']??'','curl_response_path'=>$body['curl_response_path']??'','curl_timeout'=>(int)($body['curl_timeout']??120),'browser_var_names'=>$body['browser_var_names']??'','browser_done_msg'=>$body['browser_done_msg']??'✅ Done!','browser_steps'=>$body['browser_steps']??[],'sticker_id'=>$body['sticker_id']??''];
             if(!$np['id'])jout(['ok'=>false,'error'=>'ID required']);
-            $f=false;foreach(($db['pages']??[]) as $ki=>$kv){if($kv['id']==$np['id']){$db['pages'][$ki]=$np;$f=true;break;}}
-            if(!$f)$db['pages'][]=$np;saveDB($actId,$db);jout(['ok'=>true]);break;
-        case 'delete_page':$db['pages']=array_values(array_filter($db['pages'],fn($c)=>$c['id']!==$body['id']));saveDB($actId,$db);jout(['ok'=>true]);break;
+            $f=false;foreach(($db['pages']??[]) as $ki=>$kv){if($kv['id']==$np['id']){saveFlowVersion($actId,$kv);$db['pages'][$ki]=$np;$f=true;break;}}
+            if(!$f)$db['pages'][]=$np;saveDB($actId,$db);auditLog('save_page',$np['id'],'info');jout(['ok'=>true]);break;
+        case 'duplicate_page':
+            $srcId=$body['id']??'';$pg=null;
+            foreach($db['pages']??[] as $p){if($p['id']===$srcId){$pg=$p;break;}}
+            if(!$pg)jout(['ok'=>false,'error'=>'Page not found']);
+            $pg['id']=uniqid('pg_');$pg['trigger']=($pg['trigger']??'cmd').'_copy';
+            $db['pages'][]=$pg;saveDB($actId,$db);auditLog('duplicate_page',$pg['id'],'info');jout(['ok'=>true,'id'=>$pg['id']]);break;
+        case 'delete_page':$db['pages']=array_values(array_filter($db['pages'],fn($c)=>$c['id']!==$body['id']));saveDB($actId,$db);auditLog('delete_page',$body['id']??'','warn');jout(['ok'=>true]);break;
 
         case 'get_stickers':jout(['ok'=>true,'data'=>loadStickers($actId)]);break;
         case 'delete_sticker':
@@ -5163,6 +5341,115 @@ if($page==='api'){
         case 'ab_clear_logs':
             file_put_contents(LR_LOG_FILE,'[]',LOCK_EX);jout(['ok'=>true]);break;
 
+        case 'get_analytics':
+            if(!$actId)jout(['ok'=>false,'error'=>'No bot']);
+            $an=$db['analytics']??['daily'=>[],'page_hits'=>[],'browser_runs'=>0];
+            $pages=$db['pages']??[];$flowStats=[];
+            foreach($pages as $pg){$pid=$pg['id']??'';$flowStats[]=['id'=>$pid,'trigger'=>$pg['trigger']??'','type'=>$pg['type']??'text','hits'=>$an['page_hits'][$pid]??0];}
+            usort($flowStats,fn($a,$b)=>$b['hits']<=>$a['hits']);
+            jout(['ok'=>true,'daily'=>$an['daily']??[],'page_hits'=>$an['page_hits']??[],'browser_runs'=>$an['browser_runs']??0,'flows'=>$flowStats,'stats'=>$db['stats']??[]]);break;
+
+        case 'get_browser_debug':
+            if(!$actId)jout(['ok'=>false,'error'=>'No bot']);
+            $f=getBotDir($actId).'browser_debug.json';
+            $l=file_exists($f)?json_decode(file_get_contents($f),true):[];
+            jout(['ok'=>true,'data'=>is_array($l)?array_slice($l,0,50):[]]);break;
+
+        case 'get_audit_log':
+            $l=file_exists(ADMIN_AUDIT_FILE)?json_decode(file_get_contents(ADMIN_AUDIT_FILE),true):[];
+            jout(['ok'=>true,'data'=>is_array($l)?array_slice($l,0,100):[]]);break;
+
+        case 'get_admin_settings':
+            $s=loadAdminSettings();unset($s['api_tokens']);
+            jout(['ok'=>true,'data'=>$s,'cron_url'=>(!empty($_SERVER['HTTPS'])&&$_SERVER['HTTPS']!=='off'?'https://':'http://').$_SERVER['HTTP_HOST'].strtok($_SERVER['REQUEST_URI'],'?').'?page=cron&key='.$s['cron_secret']]);break;
+
+        case 'save_admin_settings':
+            $in=$body['settings']??[];$s=loadAdminSettings();
+            if(isset($in['telegram_2fa']))$s['telegram_2fa']=['enabled'=>(bool)($in['telegram_2fa']['enabled']??false),'admin_chat_id'=>trim($in['telegram_2fa']['admin_chat_id']??'')];
+            if(isset($in['geo_block']))$s['geo_block']=['enabled'=>(bool)($in['geo_block']['enabled']??false),'countries'=>array_values(array_filter(array_map('trim',explode(',',$in['geo_block']['countries_str']??implode(',',$in['geo_block']['countries']??[])))) )];
+            if(isset($in['offline_alert']))$s['offline_alert']=['enabled'=>(bool)($in['offline_alert']['enabled']??true),'interval'=>(int)($in['offline_alert']['interval']??3600)];
+            saveAdminSettings($s);auditLog('save_admin_settings','Security settings updated','info');jout(['ok'=>true]);break;
+
+        case 'generate_api_token':
+            $s=loadAdminSettings();$name=trim($body['name']??'API Key');
+            $tok=bin2hex(random_bytes(24));
+            $s['api_tokens'][]=['id'=>uniqid('tok_'),'name'=>$name,'token'=>$tok,'created'=>date('c'),'revoked'=>false];
+            saveAdminSettings($s);auditLog('api_token_created',$name,'info');
+            jout(['ok'=>true,'token'=>$tok,'id'=>end($s['api_tokens'])['id']]);break;
+
+        case 'revoke_api_token':
+            $s=loadAdminSettings();$tid=$body['id']??'';
+            foreach($s['api_tokens']??[] as &$t){if($t['id']===$tid){$t['revoked']=true;break;}}
+            saveAdminSettings($s);auditLog('api_token_revoked',$tid,'warn');jout(['ok'=>true]);break;
+
+        case 'list_api_tokens':
+            $s=loadAdminSettings();$list=[];
+            foreach($s['api_tokens']??[] as $t){if(empty($t['revoked']))$list[]=['id'=>$t['id'],'name'=>$t['name'],'created'=>$t['created'],'preview'=>substr($t['token']??'',0,8).'…'];}
+            jout(['ok'=>true,'data'=>$list]);break;
+
+        case 'search_global':
+            $q=trim($body['q']??'');if(strlen($q)<2)jout(['ok'=>true,'users'=>[],'flows'=>[],'keys'=>[]]);
+            $ql=strtolower($q);$users=[];$flows=[];$keys=[];
+            if($actId){$up=getUsersPage($actId,1,15,$q);foreach($up['data']??[] as $u)$users[]=['id'=>$u['id']??'','name'=>$u['name']??'','username'=>$u['username']??''];}
+            foreach($db['pages']??[] as $p){if(str_contains(strtolower($p['trigger']??''),$ql)||str_contains(strtolower($p['id']??''),$ql))$flows[]=['id'=>$p['id'],'trigger'=>$p['trigger'],'type'=>$p['type']??'text'];}
+            foreach(array_merge($db['ukeys']??[],$db['lkeys']??[]) as $k){if(str_contains(strtolower($k['key']??''),$ql))$keys[]=$k['key'];}
+            jout(['ok'=>true,'users'=>$users,'flows'=>$flows,'keys'=>array_slice($keys,0,10)]);break;
+
+        case 'export_users_csv':
+            if(!$actId)jout(['ok'=>false,'error'=>'No bot']);
+            $all=[];$page=1;
+            do{$batch=getUsersPage($actId,$page,500,'');$all=array_merge($all,$batch['data']??[]);$page++;}while($page<=($batch['pages']??1));
+            $csv="Name,ID,Username,Searches,Key,Status\n";
+            foreach($all as $u){$csv.=csvEsc($u['name']??'').','.csvEsc($u['id']??'').','.csvEsc($u['username']??'').','.($u['searches']??0).','.csvEsc($u['key']??'').','.(empty($u['banned'])?'active':'banned')."\n";}
+            jout(['ok'=>true,'csv'=>$csv,'total'=>count($all)]);break;
+
+        case 'backup_bot':
+            if(!$actId)jout(['ok'=>false,'error'=>'No bot']);
+            $dir=getBotDir($actId);$pack=['bot_id'=>$actId,'exported'=>date('c'),'data'=>json_decode(file_get_contents($dir.'data.json'),true)];
+            foreach(['stickers.json','forwards.json','prem_emojis.json','logs.json'] as $bf){if(file_exists($dir.$bf))$pack[pathinfo($bf,PATHINFO_FILENAME)]=json_decode(file_get_contents($dir.$bf),true);}
+            auditLog('backup_bot',$actId,'info');jout(['ok'=>true,'backup'=>$pack]);break;
+
+        case 'restore_bot':
+            if(!$actId)jout(['ok'=>false,'error'=>'No bot']);
+            $pack=$body['backup']??[];if(empty($pack['data']))jout(['ok'=>false,'error'=>'Invalid backup']);
+            file_put_contents(getBotDir($actId).'data.json',json_encode($pack['data'],JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE),LOCK_EX);
+            auditLog('restore_bot',$actId,'warn');jout(['ok'=>true]);break;
+
+        case 'get_scheduled_broadcasts':
+            jout(['ok'=>true,'data'=>$db['settings']['scheduled_broadcasts']??[]]);break;
+
+        case 'save_scheduled_broadcast':
+            $jobs=$body['jobs']??[];if(!is_array($jobs))jout(['ok'=>false,'error'=>'Invalid']);
+            $db['settings']['scheduled_broadcasts']=$jobs;saveDB($actId,$db);auditLog('save_scheduled_broadcast',count($jobs).' jobs','info');jout(['ok'=>true]);break;
+
+        case 'broadcast_segment':
+            if(!$TOK)jout(['ok'=>false,'error'=>'No bot']);
+            $msg=$body['message']??'';$media=$body['media']??'';$segment=$body['segment']??'all';
+            if(!$msg&&!$media)jout(['ok'=>false,'error'=>'Message required']);
+            $targets=getBroadcastTargets($db,$segment);
+            $r=sendBroadcastToTargets($targets,$msg,$media,$TOK);
+            addLog($actId,"Segment broadcast ($segment): {$r['sent']} sent",'info');
+            jout(['ok'=>true,'sent'=>$r['sent'],'failed'=>$r['failed'],'targets'=>count($targets)]);break;
+
+        case 'get_flow_versions':
+            $pid=preg_replace('/[^a-zA-Z0-9_]/','_',$body['page_id']??'');
+            $f=getBotDir($actId).'flow_versions/'.$pid.'.json';
+            $h=file_exists($f)?json_decode(file_get_contents($f),true):[];
+            jout(['ok'=>true,'data'=>is_array($h)?$h:[]]);break;
+
+        case 'restore_flow_version':
+            $pid=preg_replace('/[^a-zA-Z0-9_]/','_',$body['page_id']??'');$idx=(int)($body['index']??0);
+            $f=getBotDir($actId).'flow_versions/'.$pid.'.json';
+            $h=file_exists($f)?json_decode(file_get_contents($f),true):[];
+            if(empty($h[$idx]['page']))jout(['ok'=>false,'error'=>'Version not found']);
+            $pg=$h[$idx]['page'];$fnd=false;
+            foreach($db['pages']??[] as $ki=>$p){if($p['id']===$pg['id']){$db['pages'][$ki]=$pg;$fnd=true;break;}}
+            if(!$fnd)$db['pages'][]=$pg;
+            saveDB($actId,$db);auditLog('restore_flow_version',$pid,'info');jout(['ok'=>true]);break;
+
+        case 'run_cron_now':
+            runScheduledBroadcasts();jout(['ok'=>true]);break;
+
         default:jout(['ok'=>false,'error'=>'Unknown action']);
     }
 }
@@ -5174,7 +5461,8 @@ RENDER:
 <!DOCTYPE html><html lang="en"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="color-scheme" content="dark"><meta name="theme-color" content="#030712">
-<title>REBEL ADMIN v8 — Advanced</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>REBEL ADMIN v9 — Premium</title>
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@400;500;600&family=Share+Tech+Mono&display=swap" rel="stylesheet">
 
 <style>
@@ -5338,6 +5626,14 @@ body.admin-app .panel.active{animation:panelIn .22s ease;}
 .cmd-item:hover,.cmd-item.sel{background:rgba(0,245,255,.08);color:var(--t);}
 .cmd-item kbd{margin-left:auto;font-size:9px;color:var(--tf);font-family:'Share Tech Mono';}
 .cmd-foot{padding:8px 12px;font-size:10px;color:var(--tf);font-family:'Share Tech Mono';border-top:1px solid var(--b);}
+.chart-bars{display:flex;align-items:flex-end;gap:6px;height:120px;padding:10px 0;}
+.chart-bar{flex:1;min-width:20px;background:linear-gradient(180deg,var(--c),rgba(0,245,255,.2));border-radius:4px 4px 0 0;position:relative;min-height:4px;}
+.chart-bar span{position:absolute;bottom:-16px;left:50%;transform:translateX(-50%);font-size:8px;color:var(--td);font-family:'Share Tech Mono';white-space:nowrap;}
+.notif-panel{display:none;position:fixed;top:var(--topbar-h);right:12px;width:min(340px,92vw);max-height:360px;overflow-y:auto;background:var(--s);border:1px solid var(--b);border-radius:12px;z-index:99999;box-shadow:0 12px 40px rgba(0,0,0,.5);}
+.notif-panel.open{display:block;}
+.notif-item{padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.04);font-size:11px;font-family:'Share Tech Mono';}
+body.theme-light{--bg:#eef2f7;--s:#fff;--s2:#f4f6fa;--s3:#e8ecf2;--t:#0d1117;--td:#57606a;--tf:#8b949e;--b:rgba(0,100,120,.15);}
+body.theme-amoled{--bg:#000;--s:#050505;--s2:#0a0a0a;--s3:#111;}
 .sb-foot{padding:10px 12px;border-top:1px solid var(--b);font-size:10px;color:var(--tf);font-family:'Share Tech Mono';text-align:center;}
 @media(max-width:1024px){
   :root{--sb-w:220px;}
@@ -5408,6 +5704,19 @@ body.admin-app .panel.active{animation:panelIn .22s ease;}
     <button type="submit" class="btn bp" style="width:100%">⚡ LOGIN</button>
   </form>
 </div></div>
+<?php elseif($page==='verify_2fa'): ?>
+<div class="lw"><div class="lb">
+  <div style="font-size:40px;margin-bottom:8px">🔐</div>
+  <h1 style="font-family:Orbitron;color:var(--c);margin-bottom:4px;font-size:18px">Telegram OTP</h1>
+  <div style="font-size:11px;color:var(--td);font-family:'Share Tech Mono';margin-bottom:22px">Apne Telegram par bheja gaya 6-digit code dalo</div>
+  <?php if(!empty($loginErr)):?><div style="color:var(--r);font-size:12px;margin-bottom:10px;padding:8px;background:rgba(255,45,85,.1);border-radius:6px"><?=htmlspecialchars($loginErr,ENT_QUOTES,'UTF-8')?></div><?php endif?>
+  <form method="POST">
+    <input type="hidden" name="<?=CSRF_TOKEN_NAME?>" value="<?=csrfToken()?>">
+    <div class="fgrp" style="margin-bottom:16px"><input type="text" class="fi" name="otp" placeholder="123456" required autocomplete="one-time-code" inputmode="numeric" maxlength="6" style="text-align:center;font-size:20px;letter-spacing:8px"></div>
+    <button type="submit" class="btn bp" style="width:100%">✅ Verify</button>
+  </form>
+  <a href="?page=login" style="display:block;margin-top:14px;font-size:12px;color:var(--td)">← Back to login</a>
+</div></div>
 <?php else: ?>
 
 <div class="sov" id="sov" onclick="closeSb()"></div>
@@ -5415,7 +5724,7 @@ body.admin-app .panel.active{animation:panelIn .22s ease;}
 <div class="wrap">
 <aside class="sb" id="sb">
 
-  <div class="logo"><div style="font-size:26px">🤖</div><div><h2 style="font-family:Orbitron;color:var(--c);font-size:13px">REBEL ADMIN</h2><div class="logo-badge">⚡ v8 ADVANCED</div></div></div>
+  <div class="logo"><div style="font-size:26px">🤖</div><div><h2 style="font-family:Orbitron;color:var(--c);font-size:13px">REBEL ADMIN</h2><div class="logo-badge">💎 v9 PREMIUM</div></div></div>
 
   <div class="sb-search"><input type="search" id="sbFilter" placeholder="Search menu..." autocomplete="off" oninput="filterNav(this.value)"></div>
 
@@ -5428,6 +5737,9 @@ body.admin-app .panel.active{animation:panelIn .22s ease;}
       <button type="button" class="nav-grp-h" onclick="toggleNavGrp(this)">Core <span>▼</span></button>
       <div class="nav-grp-body">
         <button class="ni active" data-nav="dash" onclick="nav('dash',this)">📊 Dashboard</button>
+        <button class="ni" data-nav="analytics" onclick="nav('analytics',this)">📈 Analytics</button>
+        <button class="ni" data-nav="security" onclick="nav('security',this)">🛡️ Security Pro</button>
+        <button class="ni" data-nav="tools" onclick="nav('tools',this)">🧰 Tools &amp; Backup</button>
         <button class="ni" data-nav="bots" onclick="nav('bots',this)">🤖 Manage Bots</button>
         <button class="ni" data-nav="cfg" onclick="nav('cfg',this)">⚙️ Bot Config &amp; Security</button>
       </div>
@@ -5492,6 +5804,8 @@ body.admin-app .panel.active{animation:panelIn .22s ease;}
     </div>
     <div class="topbar-actions">
       <button type="button" class="topbar-btn" onclick="openCmd()" title="Ctrl+K">⌘ Jump</button>
+      <button type="button" class="topbar-btn" id="themeBtn" onclick="cycleTheme()" title="Theme">🎨</button>
+      <button type="button" class="topbar-btn" id="notifBtn" onclick="toggleNotifs()" title="Notifications">🔔</button>
       <div class="topbar-bot" id="topBotName"><?=htmlspecialchars($actName)?></div>
     </div>
   </div>
@@ -5553,6 +5867,50 @@ body.admin-app .panel.active{animation:panelIn .22s ease;}
     </div>
 
     <div class="card"><div class="sh"><div class="st">📋 LIVE LOGS</div><button class="btn bg bsm" onclick="loadLogs()">🔄</button></div><div class="log-t" id="logB"><div style="color:var(--tf)">Loading...</div></div></div>
+  </div>
+
+  <!-- ANALYTICS -->
+  <div class="panel" id="p-analytics">
+    <div class="card"><div class="sh"><div class="st" style="color:var(--c)">📈 ANALYTICS &amp; INSIGHTS</div><button class="btn bg bsm" onclick="loadAnalytics()">🔄 Refresh</button></div>
+      <div id="an-charts" class="chart-bars mb"></div>
+      <div class="fg mb"><div class="sc"><div class="sn" id="an-browser">0</div><div class="sl">🌐 Browser Runs</div></div><div class="sc"><div class="sn" id="an-cmds">0</div><div class="sl">⌨️ Total Cmds</div></div><div class="sc"><div class="sn" id="an-search">0</div><div class="sl">🔍 Searches</div></div></div>
+      <div class="st mb" style="font-size:10px">🔥 TOP FLOWS</div>
+      <div class="tr"><div class="tw"><table><thead><tr><th>Trigger</th><th>Type</th><th>Hits</th></tr></thead><tbody id="an-flows"></tbody></table></div></div>
+    </div>
+    <div class="card" style="border-color:rgba(57,255,20,.3)"><div class="sh"><div class="st" style="color:var(--g)">🌐 BROWSER DEBUG LOG</div><button class="btn bg bsm" onclick="loadBrowserDebug()">🔄</button></div><div class="log-t" id="an-brlog" style="max-height:280px">Loading...</div></div>
+  </div>
+
+  <!-- SECURITY PRO -->
+  <div class="panel" id="p-security">
+    <div class="card" style="border-color:rgba(57,255,20,.35)"><div class="sh"><div class="st" style="color:var(--g)">🔐 TELEGRAM 2FA LOGIN</div></div>
+      <p style="font-size:11px;color:var(--td);margin-bottom:12px">Password ke baad Telegram par OTP bhejega. Admin Chat ID = tumhara numeric Telegram ID.</p>
+      <div class="fg mb"><div class="fgrp"><label class="fl">Enable 2FA</label><select id="sec-2fa-en" class="fsel"><option value="0">Off</option><option value="1">On</option></select></div><div class="fgrp"><label class="fl">Admin Telegram Chat ID</label><input type="text" id="sec-2fa-chat" class="fi" placeholder="123456789"></div></div>
+      <button class="btn bp" onclick="saveSecuritySettings()">💾 Save Security</button>
+    </div>
+    <div class="card"><div class="sh"><div class="st">🌍 GEO BLOCK (Cloudflare)</div></div>
+      <div class="fg mb"><div class="fgrp"><label class="fl">Enable</label><select id="sec-geo-en" class="fsel"><option value="0">Off</option><option value="1">On</option></select></div><div class="fgrp"><label class="fl">Blocked Countries (CSV)</label><input type="text" id="sec-geo-cc" class="fi" placeholder="CN,RU,KP"></div></div>
+    </div>
+    <div class="card"><div class="sh"><div class="st" style="color:var(--p)">🔑 EXTERNAL REST API</div><button class="btn bsu bsm" onclick="genApiToken()">+ Token</button></div>
+      <p style="font-size:11px;color:var(--td);margin-bottom:10px">Use: <code style="color:var(--c)">?page=ext_api&token=XXX&action=stats&bot_id=...</code></p>
+      <div id="sec-tokens"></div><div id="sec-cron" style="margin-top:10px;font-size:10px;color:var(--td);font-family:'Share Tech Mono'"></div>
+    </div>
+    <div class="card"><div class="sh"><div class="st">📋 ADMIN AUDIT LOG</div><button class="btn bg bsm" onclick="loadAuditLog()">🔄</button></div><div class="log-t" id="sec-audit" style="max-height:300px">Loading...</div></div>
+  </div>
+
+  <!-- TOOLS -->
+  <div class="panel" id="p-tools">
+    <div class="card"><div class="sh"><div class="st" style="color:var(--y)">💾 BACKUP &amp; RESTORE</div></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px"><button class="btn bp" onclick="backupBot()">📥 Download Backup</button><button class="btn bo" onclick="g('restore-inp').click()">📤 Restore Backup</button><input type="file" id="restore-inp" accept=".json" style="display:none" onchange="restoreBot(this)"></div>
+      <p style="font-size:11px;color:var(--td)">Full bot data.json + libraries export/import.</p>
+    </div>
+    <div class="card"><div class="sh"><div class="st">⏰ CRON &amp; SCHEDULER</div><button class="btn bg bsm" onclick="runCronNow()">▶ Run Now</button></div>
+      <p style="font-size:11px;color:var(--td);margin-bottom:10px">AlwaysData cron har minute: cron URL (Security panel mein milega)</p>
+      <div id="tools-cron-url" style="font-size:10px;color:var(--c);font-family:'Share Tech Mono';word-break:break-all"></div>
+    </div>
+    <div class="card"><div class="sh"><div class="st">📜 FLOW VERSION HISTORY</div></div>
+      <div class="fg mb"><div class="fgrp"><label class="fl">Page ID</label><input type="text" id="fv-page" class="fi" placeholder="pg_xxx"></div><div class="fgrp" style="justify-content:flex-end"><label class="fl">&nbsp;</label><button class="btn bg" onclick="loadFlowVersions()">Load Versions</button></div></div>
+      <div id="fv-list"></div>
+    </div>
   </div>
 
   <!-- BOT CONFIG -->
@@ -5772,11 +6130,19 @@ body.admin-app .panel.active{animation:panelIn .22s ease;}
         <div class="fgrp mb"><label class="fl">Media URL</label><div style="display:flex;gap:7px"><input type="text" id="bc-media" class="fi" placeholder="https://..."><button class="btn bg bsm" onclick="tup('bc-media')">📁</button></div></div>
 
         <div id="bc-result" style="margin-bottom:12px;display:none"></div>
-        <button class="btn bo" onclick="doBroadcast()" style="width:100%;padding:11px">📣 Send Broadcast</button>
+        <div class="fgrp mb"><label class="fl">👥 Segment</label><select id="bc-segment" class="fsel"><option value="all">All Users</option><option value="active7">Active (7 days)</option><option value="has_key">Has Key</option><option value="no_key">No Key</option></select></div>
+        <button class="btn bo" onclick="doBroadcast()" style="width:100%;padding:11px;margin-bottom:8px">📣 Send Broadcast</button>
+        <button class="btn bg" onclick="doSegmentBroadcast()" style="width:100%;padding:11px">🎯 Send to Segment</button>
       </div>
     </div>
 
-    <!-- DIRECT SEND TO SPECIFIC USER (collapsed) — same style as broadcast -->
+    <div class="card" style="border-color:rgba(191,90,242,.35)"><div class="sh"><div class="st" style="color:var(--p)">⏰ SCHEDULED BROADCAST</div><button class="btn bsu bsm" onclick="addSchedJob()">+ Add</button></div>
+      <p style="font-size:11px;color:var(--td);margin-bottom:10px">Set date/time — cron URL se auto run hoga (Tools → Cron).</p>
+      <div id="sched-jobs"></div>
+      <button class="btn bp" onclick="saveSchedJobs()" style="width:100%;margin-top:10px">💾 Save Schedule</button>
+    </div>
+
+    <!-- DIRECT SEND placeholder was here - removed duplicate close -->
 
     <div class="card" style="padding:0;overflow:hidden;border-color:rgba(0,245,255,.35)">
 
@@ -6274,7 +6640,7 @@ body.admin-app .panel.active{animation:panelIn .22s ease;}
 
   <!-- USERS -->
 
-  <div class="panel" id="p-users"><div class="card"><div class="sh"><div class="st">👥 USERS <span id="users-count" style="font-size:11px;color:var(--td)"></span></div><div class="users-toolbar"><input type="search" class="fi" id="users-search" name="users_filter" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Search name, ID, username..." readonly onfocus="this.removeAttribute('readonly')" oninput="this.dataset.touched='1';usersSearchDebounced()"><button class="btn bg bsm" onclick="loadUsers(1)">🔄</button><button class="btn bo bsm" onclick="repairUsers()" title="Fix missing users">🔧 Repair</button></div></div><div id="users-bot-hint" style="font-size:11px;color:var(--y);padding:0 0 8px;display:none"></div><div class="tr"><div class="tw"><table><thead><tr><th>Name</th><th>ID</th><th>Searches</th><th>Key</th><th>Status</th><th>Action</th></tr></thead><tbody id="ub"></tbody></table></div></div><div id="users-pager" style="display:flex;justify-content:space-between;align-items:center;padding:10px 0 0;gap:8px;flex-wrap:wrap"></div></div></div>
+  <div class="panel" id="p-users"><div class="card"><div class="sh"><div class="st">👥 USERS <span id="users-count" style="font-size:11px;color:var(--td)"></span></div><div class="users-toolbar"><input type="search" class="fi" id="users-search" name="users_filter" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Search name, ID, username..." readonly onfocus="this.removeAttribute('readonly')" oninput="this.dataset.touched='1';usersSearchDebounced()"><button class="btn bg bsm" onclick="loadUsers(1)">🔄</button><button class="btn bo bsm" onclick="repairUsers()" title="Fix missing users">🔧 Repair</button><button class="btn bg bsm" onclick="exportUsersCsv()" title="Export CSV">📥 CSV</button></div></div><div id="users-bot-hint" style="font-size:11px;color:var(--y);padding:0 0 8px;display:none"></div><div class="tr"><div class="tw"><table><thead><tr><th>Name</th><th>ID</th><th>Searches</th><th>Key</th><th>Status</th><th>Action</th></tr></thead><tbody id="ub"></tbody></table></div></div><div id="users-pager" style="display:flex;justify-content:space-between;align-items:center;padding:10px 0 0;gap:8px;flex-wrap:wrap"></div></div></div>
 
   <!-- USER KEYS -->
 
@@ -7806,6 +8172,7 @@ body.admin-app .panel.active{animation:panelIn .22s ease;}
 </div><!-- /main -->
 </div><!-- /wrap -->
 
+<div class="notif-panel" id="notifPanel"></div>
 <div class="cmd-overlay" id="cmdOverlay" onclick="if(event.target===this)closeCmd()">
   <div class="cmd-box" role="dialog" aria-label="Quick jump">
     <input type="text" class="cmd-inp" id="cmdInp" placeholder="Jump to section… (type to filter)" autocomplete="off" oninput="renderCmdList()" onkeydown="cmdKey(event)">
@@ -7830,7 +8197,7 @@ function setActiveBotName(name){
   if(g('abN'))g('abN').textContent=name;
   if(g('topBotName'))g('topBotName').textContent=name;
 }
-const NAV_LABELS={dash:'Dashboard',bots:'Manage Bots',cfg:'Bot Config & Security',fj:'Force Join',welcome:'Welcome Message',tagger:'User Tagger',broadcast:'Broadcast',vault:'API Key Vault',bvars:'Bot Variables',dvars:'Live Variables',builder:'Flow Builder',users:'Users',ukeys:'User Keys',lkeys:'Licence Keys',keygen:'Key Gen',guide:'Full Guide',stickers:'Sticker Library',forwards:'Forward Library',premoji:'Premium Emoji',apkrenamer:'APK Renamer',rosebot:'The Rebel Bot',hiddeneye:'Hidden Eye Bot',promobot:'Promo Bot',linkautomation:'Link Automation',depositbot:'Deposit Bot',linkrunner:'Link Runner',adharbot:'Aadhaar Bot'};
+const NAV_LABELS={dash:'Dashboard',analytics:'Analytics',security:'Security Pro',tools:'Tools & Backup',bots:'Manage Bots',cfg:'Bot Config & Security',fj:'Force Join',welcome:'Welcome Message',tagger:'User Tagger',broadcast:'Broadcast',vault:'API Key Vault',bvars:'Bot Variables',dvars:'Live Variables',builder:'Flow Builder',users:'Users',ukeys:'User Keys',lkeys:'Licence Keys',keygen:'Key Gen',guide:'Full Guide',stickers:'Sticker Library',forwards:'Forward Library',premoji:'Premium Emoji',apkrenamer:'APK Renamer',rosebot:'The Rebel Bot',hiddeneye:'Hidden Eye Bot',promobot:'Promo Bot',linkautomation:'Link Automation',depositbot:'Deposit Bot',linkrunner:'Link Runner',adharbot:'Aadhaar Bot'};
 const CMD_ITEMS=Object.entries(NAV_LABELS).map(([id,label])=>({id,label,icon:({dash:'📊',bots:'🤖',cfg:'⚙️',builder:'🚀',users:'👥',broadcast:'📣',rosebot:'🔥'}[id]||'▸')}));
 let cmdSel=0;
 function setBreadcrumb(id){const el=g('topCrumb');if(el)el.textContent=NAV_LABELS[id]||id;}
@@ -7902,7 +8269,7 @@ function nav(id,btn){
   panel.classList.add('active');if(btn)btn.classList.add('active');closeSb();
   setBreadcrumb(id);
   scrollPanelTop(id);
-  const m={dash:()=>{loadDash();checkBot();loadLogs();},bots:loadBots,users:loadUsers,ukeys:loadUK,lkeys:loadLK,builder:loadPages,cfg:loadCfg,vault:loadVault,bvars:loadBV,dvars:loadDynVars,fj:loadFj,broadcast:()=>{dmLoadStickers();dmLoadEmojis();dmsLoadStickers();dmsLoadEmojis();},guide:()=>{},stickers:refreshStickers,forwards:refreshForwards,welcome:loadWelcome,tagger:()=>{loadTagger();utLoadEmojiPicker();},hiddeneye:loadHiddenEye,apkrenamer:apkrLoad,promobot:promoLoad,rosebot:roseLoad,linkautomation:laLoad,depositbot:rbdInit,linkrunner:lrInit,adharbot:adharBotInit};
+  const m={dash:()=>{loadDash();checkBot();loadLogs();},analytics:loadAnalytics,security:loadSecurity,tools:loadTools,bots:loadBots,users:loadUsers,ukeys:loadUK,lkeys:loadLK,builder:loadPages,cfg:loadCfg,vault:loadVault,bvars:loadBV,dvars:loadDynVars,fj:loadFj,broadcast:()=>{dmLoadStickers();dmLoadEmojis();dmsLoadStickers();dmsLoadEmojis();loadSchedJobs();},guide:()=>{},stickers:refreshStickers,forwards:refreshForwards,welcome:loadWelcome,tagger:()=>{loadTagger();utLoadEmojiPicker();},hiddeneye:loadHiddenEye,apkrenamer:apkrLoad,promobot:promoLoad,rosebot:roseLoad,linkautomation:laLoad,depositbot:rbdInit,linkrunner:lrInit,adharbot:adharBotInit};
   const run=m[id];
   if(run){
     let ret;
@@ -8538,7 +8905,7 @@ async function loadPages(){
       <td>${tm[c.type]||c.type}</td>
       <td>${c.requires_credit?'<span class="badge bi">Paid</span>':'<span class="badge ba">Free</span>'}</td>
       <td>${fjBadge}</td>
-      <td><button class="btn by bsm" onclick="editPage('${c.id}')">Edit</button> <button class="btn bd bsm" onclick="if(confirm('Delete?'))api('delete_page',{id:'${c.id}'}).then(r=>{if(r.ok)loadPages();})">Del</button></td>
+      <td><button class="btn by bsm" onclick="editPage('${c.id}')">Edit</button> <button class="btn bg bsm" onclick="dupPage('${c.id}')">Dup</button> <button class="btn bd bsm" onclick="if(confirm('Delete?'))api('delete_page',{id:'${c.id}'}).then(r=>{if(r.ok)loadPages();})">Del</button></td>
     </tr>`;
   });
 }
@@ -8974,6 +9341,93 @@ async function parsePagePython(){
     toast('Could not parse — check Python format','error');
   }
 }
+
+async function dupPage(id){const r=await api('duplicate_page',{id});if(r.ok){toast('Page duplicated!','success');loadPages();}else toast(r.error||'Error','error');}
+
+// ═══ PREMIUM v9 FEATURES ═══
+let _globSearchTimer=null;
+const THEMES=['dark','light','amoled'];
+function applyTheme(t){document.body.classList.remove('theme-light','theme-amoled');if(t==='light')document.body.classList.add('theme-light');if(t==='amoled')document.body.classList.add('theme-amoled');localStorage.setItem('rebel_theme',t);if(g('themeBtn'))g('themeBtn').textContent=t==='light'?'☀️':t==='amoled'?'🌑':'🎨';}
+function cycleTheme(){const cur=localStorage.getItem('rebel_theme')||'dark';applyTheme(THEMES[(THEMES.indexOf(cur)+1)%THEMES.length]);}
+applyTheme(localStorage.getItem('rebel_theme')||'dark');
+
+async function loadAnalytics(){
+  const r=await api('get_analytics');if(!r.ok)return toast(r.error||'Error','error');
+  if(g('an-browser'))g('an-browser').textContent=r.browser_runs||0;
+  if(g('an-cmds'))g('an-cmds').textContent=r.stats?.cmds||0;
+  if(g('an-search'))g('an-search').textContent=r.stats?.searches||0;
+  const ch=g('an-charts');if(ch){
+    const days=Object.entries(r.daily||{}).slice(-14);
+    const max=Math.max(1,...days.map(([,v])=>(v.cmds||0)+(v.searches||0)));
+    ch.innerHTML=days.map(([d,v])=>{const h=Math.round(((v.cmds||0)+(v.searches||0))/max*100);return `<div class="chart-bar" style="height:${Math.max(4,h)}%" title="${d}"><span>${d.slice(5)}</span></div>`;}).join('')||'<div style="color:var(--td);font-size:12px">No data yet — use bot to collect stats</div>';
+  }
+  const fb=g('an-flows');if(fb){fb.innerHTML='';(r.flows||[]).slice(0,15).forEach(f=>fb.innerHTML+=`<tr><td>/${f.trigger||'—'}</td><td>${f.type}</td><td><b style="color:var(--c)">${f.hits}</b></td></tr>`);}
+  loadBrowserDebug();
+}
+async function loadBrowserDebug(){
+  const r=await api('get_browser_debug');const b=g('an-brlog');if(!b)return;
+  if(!r.ok||!r.data?.length){b.innerHTML='<div style="color:var(--td)">No browser runs logged yet.</div>';return;}
+  b.innerHTML=r.data.map(x=>`<div style="margin-bottom:6px"><span style="color:var(--tf)">[${new Date(x.time).toLocaleString()}]</span> <span style="color:var(--${x.status==='done'?'g':x.status==='error'?'r':'y'})">${x.status}</span> page=${x.page} user=${x.user}${x.error?' err='+x.error:''}</div>`).join('');
+}
+async function loadSecurity(){
+  const[r,t,a]=await Promise.all([api('get_admin_settings'),api('list_api_tokens'),api('get_audit_log')]);
+  if(r.ok&&r.data){
+    g('sec-2fa-en').value=r.data.telegram_2fa?.enabled?'1':'0';
+    g('sec-2fa-chat').value=r.data.telegram_2fa?.admin_chat_id||'';
+    g('sec-geo-en').value=r.data.geo_block?.enabled?'1':'0';
+    g('sec-geo-cc').value=(r.data.geo_block?.countries||[]).join(',');
+    if(g('sec-cron'))g('sec-cron').textContent='Cron URL: '+(r.cron_url||'');
+    if(g('tools-cron-url'))g('tools-cron-url').textContent=r.cron_url||'';
+  }
+  if(t.ok&&g('sec-tokens'))g('sec-tokens').innerHTML=(t.data||[]).map(x=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px;background:var(--s2);border-radius:6px;margin-bottom:6px;font-size:11px"><span><b>${x.name}</b> <span style="color:var(--td)">${x.preview}</span></span><button class="btn bd bsm" onclick="revokeToken('${x.id}')">Revoke</button></div>`).join('')||'<div style="color:var(--td);font-size:12px">No API tokens</div>';
+  loadAuditLog(a);
+}
+async function saveSecuritySettings(){
+  const r=await api('save_admin_settings',{settings:{telegram_2fa:{enabled:g('sec-2fa-en').value==='1',admin_chat_id:g('sec-2fa-chat').value.trim()},geo_block:{enabled:g('sec-geo-en').value==='1',countries_str:g('sec-geo-cc').value.trim()},offline_alert:{enabled:true,interval:3600}}});
+  if(r.ok){toast('Security saved!','success');loadSecurity();}else toast(r.error||'Error','error');
+}
+async function genApiToken(){const name=prompt('Token name:','My App');if(!name)return;const r=await api('generate_api_token',{name});if(r.ok){toast('Token: '+r.token,'success');alert('Save this token now:\n\n'+r.token);loadSecurity();}else toast(r.error||'Error','error');}
+async function revokeToken(id){if(!confirm('Revoke token?'))return;const r=await api('revoke_api_token',{id});if(r.ok)loadSecurity();}
+async function loadAuditLog(pre){const r=pre?.ok?pre:await api('get_audit_log');const b=g('sec-audit');if(!b)return;
+  if(!r.ok||!r.data?.length){b.innerHTML='<div style="color:var(--td)">No audit entries.</div>';return;}
+  b.innerHTML=r.data.map(x=>`<div style="margin-bottom:5px"><span style="color:var(--tf)">[${new Date(x.time).toLocaleString()}]</span> <span style="color:var(--c)">${x.action}</span> ${x.detail||''}</div>`).join('');
+  window._lastAudit=r.data;
+}
+async function loadTools(){const r=await api('get_admin_settings');if(r.ok&&g('tools-cron-url'))g('tools-cron-url').textContent=r.cron_url||'';}
+async function backupBot(){const r=await api('backup_bot');if(!r.ok)return toast(r.error||'Error','error');const blob=new Blob([JSON.stringify(r.backup,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='rebel_backup_'+Date.now()+'.json';a.click();toast('Backup downloaded','success');}
+async function restoreBot(inp){if(!inp.files?.length)return;const reader=new FileReader();reader.onload=async e=>{try{const pack=JSON.parse(e.target.result);if(!confirm('Restore backup? Current data will be overwritten!'))return;const r=await api('restore_bot',{backup:pack});if(r.ok){toast('Restored!','success');loadDash();}else toast(r.error||'Error','error');}catch(err){toast('Invalid JSON','error');}inp.value='';};reader.readAsText(inp.files[0]);}
+async function runCronNow(){const r=await api('run_cron_now');if(r.ok)toast('Cron jobs executed','success');}
+async function loadFlowVersions(){const pid=g('fv-page')?.value.trim();if(!pid)return;const r=await api('get_flow_versions',{page_id:pid});const l=g('fv-list');if(!l)return;if(!r.ok||!r.data?.length){l.innerHTML='<div style="color:var(--td);font-size:12px">No versions saved yet.</div>';return;}
+  l.innerHTML=r.data.map((v,i)=>`<div style="padding:10px;background:var(--s2);border-radius:8px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center"><span style="font-size:11px;font-family:'Share Tech Mono'">${v.saved}</span><button class="btn bg bsm" onclick="restoreFlowVer('${pid}',${i})">Restore</button></div>`).join('');}
+async function restoreFlowVer(pid,i){if(!confirm('Restore this version?'))return;const r=await api('restore_flow_version',{page_id:pid,index:i});if(r.ok){toast('Restored!','success');loadPages();}else toast(r.error||'Error','error');}
+async function exportUsersCsv(){toast('Exporting...','info');const r=await api('export_users_csv');if(!r.ok)return toast(r.error||'Error','error');const blob=new Blob([r.csv],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='users_'+Date.now()+'.csv';a.click();toast('Exported '+r.total+' users','success');}
+async function doSegmentBroadcast(){const msg=g('bc-msg').value.trim();const media=g('bc-media').value.trim();const segment=g('bc-segment').value;if(!msg&&!media)return toast('Message required','error');if(!confirm('Send to segment '+segment+'?'))return;const r=await api('broadcast_segment',{message:msg,media,segment});if(r.ok)toast(`Sent ${r.sent} (${r.targets} targets)`,'success');else toast(r.error||'Error','error');}
+let _schedJobs=[];
+async function loadSchedJobs(){const r=await api('get_scheduled_broadcasts');_schedJobs=r.data||[];renderSchedJobs();}
+function renderSchedJobs(){const c=g('sched-jobs');if(!c)return;c.innerHTML=_schedJobs.map((j,i)=>`<div style="background:var(--s2);padding:10px;border-radius:8px;margin-bottom:8px;border:1px solid var(--b)"><div class="fg"><div class="fgrp"><label class="fl">Run At</label><input type="datetime-local" class="fi sj-at" data-i="${i}" value="${(j.run_at||'').replace(' ','T').slice(0,16)}"></div><div class="fgrp"><label class="fl">Segment</label><select class="fsel sj-seg" data-i="${i}"><option value="all" ${j.segment==='all'?'selected':''}>All</option><option value="active7" ${j.segment==='active7'?'selected':''}>Active 7d</option><option value="has_key" ${j.segment==='has_key'?'selected':''}>Has Key</option></select></div></div><textarea class="fta sj-msg" data-i="${i}" style="min-height:50px;margin:6px 0" placeholder="Message">${j.message||''}</textarea><div style="display:flex;gap:6px"><select class="fsel sj-rep" data-i="${i}" style="flex:1"><option value="" ${!j.repeat?'selected':''}>Once</option><option value="daily" ${j.repeat==='daily'?'selected':''}>Daily</option></select><label style="font-size:11px;display:flex;align-items:center;gap:4px"><input type="checkbox" class="sj-en" data-i="${i}" ${j.enabled?'checked':''}>On</label><button class="btn bd bsm" onclick="_schedJobs.splice(${i},1);renderSchedJobs()">✕</button></div></div>`).join('')||'<div style="color:var(--td);font-size:12px">No scheduled jobs</div>';}
+function addSchedJob(){_schedJobs.push({enabled:true,run_at:new Date(Date.now()+3600000).toISOString().slice(0,19).replace('T',' '),segment:'all',message:'',repeat:'',media:''});renderSchedJobs();}
+async function saveSchedJobs(){document.querySelectorAll('.sj-at').forEach(el=>{const i=+el.dataset.i;_schedJobs[i].run_at=el.value.replace('T',' ')+':00';});document.querySelectorAll('.sj-seg').forEach(el=>{const i=+el.dataset.i;_schedJobs[i].segment=el.value;});document.querySelectorAll('.sj-msg').forEach(el=>{const i=+el.dataset.i;_schedJobs[i].message=el.value;});document.querySelectorAll('.sj-rep').forEach(el=>{const i=+el.dataset.i;_schedJobs[i].repeat=el.value;});document.querySelectorAll('.sj-en').forEach(el=>{const i=+el.dataset.i;_schedJobs[i].enabled=el.checked;});const r=await api('save_scheduled_broadcast',{jobs:_schedJobs});if(r.ok)toast('Schedule saved!','success');}
+function toggleNotifs(){const p=g('notifPanel');if(!p)return;p.classList.toggle('open');if(p.classList.contains('open'))refreshNotifs();}
+async function refreshNotifs(){const p=g('notifPanel');if(!p)return;const a=await api('get_audit_log');const items=(a.data||[]).slice(0,12);p.innerHTML=items.map(x=>`<div class="notif-item"><span style="color:var(--tf)">${new Date(x.time).toLocaleTimeString()}</span> <b>${x.action}</b> ${x.detail||''}</div>`).join('')||'<div class="notif-item">No notifications</div>';}
+
+const _renderCmdListOrig=renderCmdList;
+renderCmdList=function(){
+  const q=(g('cmdInp')?.value||'').trim();
+  if(q.length>=2){
+    clearTimeout(_globSearchTimer);
+    _globSearchTimer=setTimeout(async()=>{
+      const r=await api('search_global',{q});
+      const list=g('cmdList');if(!list)return;
+      let h='';
+      (r.flows||[]).forEach((f,i)=>h+=`<div class="cmd-item" onclick="closeCmd();navQuick('builder')"><span>🚀</span><span>Flow /${f.trigger}</span></div>`);
+      (r.users||[]).forEach(u=>h+=`<div class="cmd-item" onclick="closeCmd();navQuick('users')"><span>👤</span><span>${u.name||u.id}</span></div>`);
+      if(!h)h='<div style="padding:12px;color:var(--td);font-size:12px">No results — try section name</div>';
+      list.innerHTML=h;
+    },200);
+    return;
+  }
+  _renderCmdListOrig();
+};
 
 // BROWSER AUTOMATION STEP BUILDER JS
 
