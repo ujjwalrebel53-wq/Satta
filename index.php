@@ -4323,6 +4323,13 @@ if($page==='login'){
 }
 if($page==='logout'){session_unset();session_destroy();header('Location: ?page=login');exit;}
 if(empty($_SESSION['rebel_ok'])){header('Location: ?page=login');exit;}
+if(empty($_SESSION['act'])){
+    $_botsAuto=loadBots();
+    if(!empty($_botsAuto))$_SESSION['act']=$_botsAuto[0]['id'];
+}
+$savedActId=$_SESSION['act']??'';
+$actName='No bot selected';
+foreach(loadBots() as $b){if($b['id']===$savedActId){$actName=$b['name'].' (@'.($b['username']??'?').')';break;}}
 // CSRF guard for all admin POST API calls (JSON body carries token via header)
 if($page==='api'&&$_SERVER['REQUEST_METHOD']==='POST'&&!verifyCsrf()){
     jout(['ok'=>false,'error'=>'CSRF validation failed. Please reload the page.']);
@@ -4355,7 +4362,10 @@ if($page==='api'){
     switch($action){
         case 'upload_media':
             if(isset($_FILES['file'])&&$_FILES['file']['error']==0&&$actId){
-                $dir=getBotDir($actId).'uploads/';$ext=pathinfo($_FILES['file']['name'],PATHINFO_EXTENSION);$fn=uniqid('m_').'.'.$ext;
+                $dir=getBotDir($actId).'uploads/';$ext=strtolower(pathinfo($_FILES['file']['name'],PATHINFO_EXTENSION));
+                $blockedExt=['php','phtml','php3','php4','php5','phar','cgi','pl','py','sh','bash'];
+                if(in_array($ext,$blockedExt,true))jout(['ok'=>false,'error'=>'File type not allowed']);
+                $fn=uniqid('m_').'.'.$ext;
                 if(move_uploaded_file($_FILES['file']['tmp_name'],$dir.$fn)){
                     $pr=(!empty($_SERVER['HTTPS'])&&$_SERVER['HTTPS']!=='off')?'https://':'http://';
                     $url=$pr.$_SERVER['HTTP_HOST'].dirname($_SERVER['REQUEST_URI']).'/bots/'.$actId.'/uploads/'.$fn;
@@ -7629,8 +7639,19 @@ td{padding:9px 11px;vertical-align:middle;}
 <script>
 const A='?page=api&action=';
 const CSRF_TOKEN='<?=csrfToken()?>';
-const ACTIVE_BOT_ID='<?=addslashes($savedActId)?>';
-const ACTIVE_BOT_NAME='<?=addslashes($actName)?>';
+let ACTIVE_BOT_ID='<?=addslashes($savedActId)?>';
+let ACTIVE_BOT_NAME='<?=addslashes($actName)?>';
+async function ensureActiveBot(){
+  if(ACTIVE_BOT_ID)return true;
+  const r=await api('get_bots');
+  const list=r.data||[];
+  const b=list.find(x=>x.active)||list[0];
+  if(!b)return false;
+  if(!b.active){const s=await api('set_active_bot',{botId:b.id});if(!s.ok)return false;}
+  ACTIVE_BOT_ID=b.id;ACTIVE_BOT_NAME=b.name+' (@'+(b.username||'?')+')';
+  if(g('abN'))g('abN').textContent=ACTIVE_BOT_NAME;
+  return true;
+}
 function g(id){return document.getElementById(id);}
 function toast(m,t='info'){const d=document.createElement('div');d.className='toast '+t;d.innerHTML=`<span style="color:var(--${t==='success'?'g':t==='error'?'r':t==='warn'?'y':'c'})">● </span>${m}`;g('tc').appendChild(d);setTimeout(()=>{d.style.opacity=0;d.style.transform='translateX(20px)';setTimeout(()=>d.remove(),300);},3000);}
 function openSb(){g('sb').classList.add('open');g('sov').classList.add('open');document.body.style.overflow='hidden';}
@@ -7696,8 +7717,11 @@ async function loadUsers(page){
   const reqId=++_usersReqId;
   usersShowHint('');
   if(!ACTIVE_BOT_ID){
-    b.innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--y);padding:16px">⚠️ Koi bot select nahi hai.<br><br><b>Bots</b> tab me jao aur apne bot pe <b>✅ Select</b> dabao.</td></tr>';
-    renderUsersPager(0,1,1,30);if(g('users-count'))g('users-count').textContent='';return;
+    b.innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--td);padding:16px">Loading bot...</td></tr>';
+    if(!(await ensureActiveBot())){
+      b.innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--y);padding:16px">⚠️ Koi bot select nahi hai.<br><br><b>Bots</b> tab me jao aur apne bot pe <b>✅ Select</b> dabao.</td></tr>';
+      renderUsersPager(0,1,1,30);if(g('users-count'))g('users-count').textContent='';return;
+    }
   }
   usersShowHint('Active bot: '+ACTIVE_BOT_NAME);
   b.innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--td);padding:16px">Loading...</td></tr>';
