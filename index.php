@@ -5206,10 +5206,12 @@ body.admin-app .main{height:var(--app-h,100vh);height:var(--app-h,100dvh);min-he
 .topbar-left{display:flex;align-items:center;gap:10px;min-width:0;}
 .topbar-bot{display:none;font-size:11px;color:var(--g);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:45vw;text-align:right;font-family:'Share Tech Mono';}
 .con{padding:18px;flex:1;overflow-x:hidden;padding-top:18px;}
-body.admin-app .con{flex:1 1 auto;min-height:0;overflow:hidden;padding:0;display:flex;flex-direction:column;}
+body.admin-app .con{flex:1 1 auto;min-height:0;overflow:hidden;padding:0;display:flex;flex-direction:column;position:relative;}
 body.admin-app .panel-viewport{flex:1 1 auto;min-height:0;overflow:hidden;position:relative;padding:0;}
 body.admin-app .panel{display:none;position:absolute;inset:0;overflow-y:auto;overflow-x:hidden;padding:18px;padding-bottom:calc(18px + env(safe-area-inset-bottom,0));-webkit-overflow-scrolling:touch;overscroll-behavior:contain;overflow-anchor:none;touch-action:pan-y;}
 body.admin-app .panel.active{display:block;}
+body.admin-app .con>.panel{display:none;position:absolute;inset:0;overflow-y:auto;overflow-x:hidden;padding:18px;padding-bottom:calc(18px + env(safe-area-inset-bottom,0));-webkit-overflow-scrolling:touch;overscroll-behavior:contain;overflow-anchor:none;touch-action:pan-y;}
+body.admin-app .con>.panel.active{display:block;}
 .panel{display:none;}.panel.active{display:block;}
 .users-toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;flex:1;min-width:0;justify-content:flex-end;}
 #users-search{flex:1;min-width:140px;max-width:280px;padding:6px 10px!important;font-size:12px;}
@@ -5875,7 +5877,6 @@ td{padding:9px 11px;vertical-align:middle;}
         <div style="color:var(--td);font-size:12px;text-align:center;grid-column:1/-1;padding:20px">Click 🔄 Refresh to load library...</div>
       </div>
     </div>
-  </div>
   </div>
 
   <!-- FORWARD LIBRARY -->
