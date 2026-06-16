@@ -1344,6 +1344,184 @@ function checkCond($c,$u,$s,$q,$cv,$r=null,$a=null){
     if(strpos($c,'==')!==false){[$l,$rv]=explode('==',$c,2);$l=trim($l);$rv=trim($rv);$ra=array_map('trim',explode(',',$rv));return in_array($l,$ra)||$l===$rv;}
     return true;
 }
+function findPageById(&$db,$id){
+    if($id==='')return null;
+    foreach($db['pages']??[] as $p){if(($p['id']??'')===$id)return $p;}
+    return null;
+}
+function evalFlowCond($cond,$u,$s,$query,$cv='',$r=null,$a=null,$db=null){
+    if(empty(trim($cond)))return true;
+    $cond=trim($cond);
+    if(preg_match('/^(.+?)\s+contains\s+(.+)$/iu',$cond,$m)){
+        $l=pv(trim($m[1]),$u,$s,$query,$cv,$r,$a,$db);$rv=pv(trim($m[2]),$u,$s,$query,$cv,$r,$a,$db);
+        return stripos($l,$rv)!==false;
+    }
+    if(preg_match('/^(.+?)\s+matches\s+\/(.+)\/(\w*)$/u',$cond,$m)){
+        $l=pv(trim($m[1]),$u,$s,$query,$cv,$r,$a,$db);
+        return @preg_match('/'.$m[2].'/'.($m[3]?:'i'),$l)===1;
+    }
+    foreach(['>=','<=','!=','==','>','<'] as $op){
+        if(strpos($cond,$op)===false)continue;
+        [$l,$rv]=explode($op,$cond,2);
+        $l=pv(trim($l),$u,$s,$query,$cv,$r,$a,$db);$rv=pv(trim($rv),$u,$s,$query,$cv,$r,$a,$db);
+        if(is_numeric($l)&&is_numeric($rv)){
+            $ln=(float)$l;$rn=(float)$rv;
+            if($op==='>=')return $ln>=$rn;
+            if($op==='<=')return $ln<=$rn;
+            if($op==='>')return $ln>$rn;
+            if($op==='<')return $ln<$rn;
+            if($op==='==')return $ln==$rn;
+            if($op==='!=')return $ln!=$rn;
+            return false;
+        }
+        break;
+    }
+    return checkCond($cond,$u,$s,$query,$cv,$r,$a);
+}
+function resolveFlowRules(&$db,$p,$u,$s,$query,$depth=0){
+    if($depth>8||!is_array($p))return $p;
+    foreach($p['flow_rules']??[] as $rule){
+        if(evalFlowCond($rule['cond']??'',$u,$s,$query,$p['custom_vars']??'',null,null,$db)){
+            $tid=trim($rule['page_id']??'');if($tid){$tp=findPageById($db,$tid);if($tp)return resolveFlowRules($db,$tp,$u,$s,$query,$depth+1);}
+        }elseif(!empty($rule['else_page_id'])){
+            $tp=findPageById($db,$rule['else_page_id']);if($tp)return resolveFlowRules($db,$tp,$u,$s,$query,$depth+1);
+        }
+    }
+    if(($p['type']??'')==='include'){
+        $inc=trim($p['include_page']??'');if($inc){$tp=findPageById($db,$inc);if($tp)return resolveFlowRules($db,$tp,$u,$s,$query,$depth+1);}
+    }
+    return $p;
+}
+function checkPageRateLimit($botId,$uid,$pageId,$maxPerHour,&$db,$dryRun=false){
+    if($maxPerHour<=0)return['ok'=>true,'remaining'=>999];
+    $key='rl_'.$pageId;$hits=$db['users'][$uid]['flow_rl'][$key]??[];$cut=time()-3600;
+    $hits=array_values(array_filter($hits,fn($t)=>$t>$cut));
+    if(count($hits)>=$maxPerHour)return['ok'=>false,'remaining'=>0,'hits'=>count($hits)];
+    if(!$dryRun){$hits[]=time();$db['users'][$uid]['flow_rl'][$key]=$hits;}
+    return['ok'=>true,'remaining'=>$maxPerHour-count($hits)];
+}
+function flowWebhookUrl($botId,$pageId,$key){
+    $pr=(!empty($_SERVER['HTTPS'])&&$_SERVER['HTTPS']!=='off')?'https://':'http://';
+    return $pr.$_SERVER['HTTP_HOST'].strtok($_SERVER['REQUEST_URI'],'?').'?page=flow_webhook&bot_id='.urlencode($botId).'&flow='.urlencode($pageId).'&key='.urlencode($key);
+}
+function startWizardFlow($botId,$chatId,&$u,&$db,$s,$query,$p,$token){
+    $steps=$p['wizard_steps']??[];if(empty($steps)){$steps=[['text'=>$p['text']??'Step 1','var'=>'answer']];}
+    $uid=(string)($u['id']??'');
+    if(!isset($db['wiz_sessions']))$db['wiz_sessions']=[];
+    $db['wiz_sessions'][$uid]=['page_id'=>$p['id']??'','step'=>0,'answers'=>[],'steps'=>$steps];
+    $u['active_page']='__wiz__'.($p['id']??'');saveDB($botId,$db);
+    $st=$steps[0];$txt=pv($st['text']??'',$u,$s,$query,$p['custom_vars']??'',null,null,$db);
+    $kb=buildKb($p['buttons']??[],$u,$s,$query,$p['custom_vars']??'');
+    sendLong($botId,$chatId,null,$txt?:' ',$st['media']??($p['media_main']??''),$kb,false,$token);
+}
+function handleWizardReply($botId,$chatId,&$u,&$db,$s,$msgText,$token){
+    $uid=(string)($u['id']??'');$sess=$db['wiz_sessions'][$uid]??null;if(!$sess)return false;
+    $steps=$sess['steps']??[];$step=(int)($sess['step']??0);
+    if(isset($steps[$step])){
+        $var=trim($steps[$step]['var']??('step_'.$step));if($var==='')$var='step_'.$step;
+        $sess['answers'][$var]=$msgText;
+    }
+    $step++;$sess['step']=$step;
+    if($step<count($steps)){
+        $db['wiz_sessions'][$uid]=$sess;saveDB($botId,$db);
+        $pg=findPageById($db,$sess['page_id']??'');$cv=$pg['custom_vars']??'';
+        foreach($sess['answers'] as $k=>$v)$cv.=($cv?"\n":'').$k.'='.$v;
+        $st=$steps[$step];$txt=pv($st['text']??'',$u,$s,$msgText,$cv,null,null,$db);
+        sendLong($botId,$chatId,null,$txt?:' ',$st['media']??'','',false,$token);
+        return true;
+    }
+    $pg=findPageById($db,$sess['page_id']??'');if(!$pg){$u['active_page']='';unset($db['wiz_sessions'][$uid]);saveDB($botId,$db);return true;}
+    $cv=$pg['custom_vars']??'';foreach($sess['answers'] as $k=>$v)$cv.=($cv?"\n":'').$k.'='.$v;
+    $final=pv($pg['wizard_final']??($pg['text']??'✅ Done!'),$u,$s,$msgText,$cv,null,null,$db);
+    $kb=buildKb($pg['buttons']??[],$u,$s,$msgText,$cv);
+    sendLong($botId,$chatId,null,$final,$pg['media_main']??'',$kb,false,$token);
+    $u['active_page']='';unset($db['wiz_sessions'][$uid]);saveDB($botId,$db);
+    if(!empty($pg['subflow_after'])){$ap=findPageById($db,$pg['subflow_after']);if($ap)runMatchedPage($botId,$chatId,null,$u,$db,$s,$msgText,$ap,$token,['depth'=>1,'skip_wizard'=>true]);}
+    return true;
+}
+function runMatchedPage($botId,$chatId,$msgId,&$u,&$db,$s,$query,$p,$token,$opts=[]){
+    $uid=(string)($u['id']??'');$depth=(int)($opts['depth']??0);if($depth>10)return;
+    $p=resolveFlowRules($db,$p,$u,$s,$query);
+    $max=(int)($p['rate_limit_max']??0);
+    if($max>0&&empty($opts['skip_rate'])){
+        $rl=checkPageRateLimit($botId,$uid,$p['id']??'',$max,$db);
+        if(!$rl['ok']){
+            $msg=$p['rate_limit_msg']??'⏳ Rate limit reached. Try again later.';
+            tg('sendMessage',['chat_id'=>$chatId,'text'=>pv($msg,$u,$s,$query,$p['custom_vars']??'',null,null,$db),'parse_mode'=>'HTML'],$token);
+            return;
+        }
+    }
+    if(!empty($p['subflow_before'])&&empty($opts['in_before'])){
+        $bp=findPageById($db,$p['subflow_before']);if($bp)runMatchedPage($botId,$chatId,$msgId,$u,$db,$s,$query,$bp,$token,array_merge($opts,['in_before'=>true]));
+    }
+    if(($p['type']??'')==='include'){
+        $inc=findPageById($db,$p['include_page']??'');if($inc){runMatchedPage($botId,$chatId,$msgId,$u,$db,$s,$query,$inc,$token,['depth'=>$depth+1]);return;}
+    }
+    if(($p['type']??'')==='wizard'&&empty($opts['skip_wizard'])){startWizardFlow($botId,$chatId,$u,$db,$s,$query,$p,$token);return;}
+    bumpAnalytics($botId,'cmd',$p['id']??'');
+    $fj=$s['force_join']??['enabled'=>false,'channels'=>[]];
+    if(!empty($p['force_join'])&&!empty($fj['enabled'])){if(!checkForceJoin($uid,$fj,$token)){sendForceJoinMsg($chatId,$fj,$token);return;}}
+    if(!hasAccess($uid,$chatId,$p['access_control']??'',$s['global_vars']??'')){
+        if(!empty($p['fallback_page'])){$fb=findPageById($db,$p['fallback_page']);if($fb){runMatchedPage($botId,$chatId,$msgId,$u,$db,$s,$query,$fb,$token,['depth'=>$depth+1]);}return;}
+        return;
+    }
+    if(($p['type']??'')==='text'){
+        saveDB($botId,$db);
+        $rt=pv($p['text']??'',$u,$s,$query,$p['custom_vars']??'',null,null,$db);
+        $kb=buildKb($p['buttons']??[],$u,$s,$query,$p['custom_vars']??'');
+        $kb=injectOwnerEditBtn($kb,$p['id']??'',$uid,$s['adminId']??'');
+        if(!empty(trim($p['sticker_id']??''))){sendSticker($chatId,trim(pv($p['sticker_id'],$u,$s,$query,$p['custom_vars']??'')),$token);usleep(300000);}
+        if(!empty(trim($p['document_url']??''))){sendDocument($chatId,pv($p['document_url'],$u,$s,$query,$p['custom_vars']??'',null,null,$db),$rt,$kb,$token);}
+        else sendLong($botId,$chatId,$msgId,$rt,$p['media_main']??'',$kb,$msgId!==null,$token);
+    }else{
+        if(!empty($p['requires_credit'])&&empty($u['key'])&&($u['searchesLeft']??0)<=0){tg('sendMessage',['chat_id'=>$chatId,'text'=>'🔑 Quota empty. Use /redeem [key]'],$token);return;}
+        if(!$query&&($p['type']??'')==='api'){
+            if(!empty(trim($p['msg_missing']??''))||!empty($p['media_missing']??''))
+                sendMsg($chatId,$msgId,pv($p['msg_missing']??'🔍 Send something',$u,$s,$query,$p['custom_vars']??''),$p['media_missing']??'',null,$msgId!==null,$token);
+            return;
+        }
+        if(!empty($p['requires_credit'])&&($u['searchesLeft']??0)!=999999)$u['searchesLeft']--;
+        $u['searches']=($u['searches']??0)+1;$db['stats']['searches']++;saveDB($botId,$db);
+        if(($p['type']??'')==='browser')execBrowser($botId,$chatId,$msgId,$u,$db,$s,$query,$p,$token);
+        else execPage($botId,$chatId,$msgId,$u,$db,$s,$query,$p,$token);
+    }
+    if(!empty($p['subflow_after'])&&empty($opts['in_after'])){
+        $ap=findPageById($db,$p['subflow_after']);if($ap)runMatchedPage($botId,$chatId,null,$u,$db,$s,$query,$ap,$token,['in_after'=>true,'depth'=>$depth+1]);
+    }
+}
+function simulatePageFlow($botId,&$db,$s,$pageId,$query,$fakeUser=[]){
+    $p=findPageById($db,$pageId);if(!$p)return['ok'=>false,'error'=>'Page not found'];
+    $u=array_merge(['id'=>'999999999','name'=>'TestUser','username'=>'testuser','searchesLeft'=>100,'key'=>'','searches'=>0],$fakeUser);
+    $steps=[['step'=>'start','page_id'=>$p['id'],'type'=>$p['type']??'text']];
+    $resolved=resolveFlowRules($db,$p,$u,$s,$query);
+    if(($resolved['id']??'')!==($p['id']??'')){$steps[]=['step'=>'branch','from'=>$p['id'],'to'=>$resolved['id']];$p=$resolved;}
+    $max=(int)($p['rate_limit_max']??0);
+    if($max>0){$rl=checkPageRateLimit($botId,(string)$u['id'],$p['id']??'',$max,$db,true);if(!$rl['ok'])$steps[]=['step'=>'rate_limited','max'=>$max];}
+    if(!empty($p['subflow_before']))$steps[]=['step'=>'subflow_before','page'=>$p['subflow_before']];
+    if(!empty($p['subflow_after']))$steps[]=['step'=>'subflow_after','page'=>$p['subflow_after']];
+    $out=['ok'=>true,'page_id'=>$p['id'],'type'=>$p['type']??'text','steps'=>$steps,'query'=>$query];
+    if(($p['type']??'')==='text'){
+        $out['message']=pv($p['text']??'',$u,$s,$query,$p['custom_vars']??'',null,null,$db);
+        $out['buttons']=array_map(fn($b)=>['text'=>$b['text']??'','type'=>$b['type']??'page','target'=>$b['target']??''],$p['buttons']??[]);
+    }elseif(($p['type']??'')==='include'){
+        $out['include']=$p['include_page']??'';$sub=simulatePageFlow($botId,$db,$s,$p['include_page']??'',$query,$fakeUser);
+        if($sub['ok']??false)$out['subflow']=$sub;
+    }elseif(($p['type']??'')==='wizard'){
+        $out['wizard_steps']=$p['wizard_steps']??[];$out['message']=pv(($p['wizard_steps'][0]['text']??$p['text']??''),$u,$s,$query,$p['custom_vars']??'',null,null,$db);
+        $out['final_preview']=pv($p['wizard_final']??($p['text']??''),$u,$s,$query,$p['custom_vars']??'',null,null,$db);
+    }elseif(($p['type']??'')==='api'){
+        $out['would_call']=pv($p['api_url']??'',$u,$s,urlencode($query),$p['custom_vars']??'');
+        $out['message_preview']=pv($p['text']??'',$u,$s,$query,$p['custom_vars']??'',null,null,$db);
+    }elseif(($p['type']??'')==='curl'){
+        $vm=buildVarMap($u,$s,$query);$url=str_replace('{query}',rawurlencode($query),$p['curl_url']??'');
+        foreach($vm as $vk=>$vv)if($vk!=='query')$url=str_replace('{'.$vk.'}',$vv,$url);
+        $out['would_call']=['url'=>$url,'method'=>$p['curl_method']??'POST'];
+        $out['message_preview']=$p['text']?:'{curl_response}';
+    }elseif(($p['type']??'')==='browser'){
+        $out['browser_steps']=count($p['browser_steps']??[]);$out['message_preview']=$p['browser_done_msg']??'';
+    }
+    return $out;
+}
 
 function buildKb($buttons,$u,$s,$q,$cv,$r=null,$a=null){
     if(empty($buttons))return null;$rows=[];
@@ -1976,14 +2154,7 @@ function handleFreeText($botId,$chatId,$isGroup,$uid,$u,&$db,$s,$msgText,$token,
                 return true;
             }
         }
-        if($p['type']==='text'){
-            $rt=pv($p['text']??'',$u,$s,$msgText,$p['custom_vars']??'',null,null,$db);
-            $kb=buildKb($p['buttons']??[],$u,$s,$msgText,$p['custom_vars']??'');
-            $kb=injectOwnerEditBtn($kb,$p['id']??'',$u['id']??'',$s['adminId']??'');
-            sendLong($botId,$chatId,null,$rt,$p['media_main']??'',$kb,false,$token);
-        }else{
-            execPage($botId,$chatId,null,$u,$db,$s,$msgText,$p,$token);
-        }
+        runMatchedPage($botId,$chatId,null,$u,$db,$s,$msgText,$p,$token);
         addLog($botId,"FreeText[{$p['id']}]: ".mb_substr($msgText,0,40).' by '.($u['name']??''),'info');
         $fired=true;
         break;
@@ -2376,12 +2547,7 @@ if(isset($_GET['webhook_bot'])){
                 }else{
 
                     if(!empty($u['active_page'])){$u['active_page']='';saveDB($botId,$db);}
-                    if($gPage['type']==='text'){
-                        $rt=pv($gPage['text']??'',$u,$s,'',$gPage['custom_vars']??'',null,null,$db);
-                        $kb=buildKb($gPage['buttons']??[],$u,$s,'',$gPage['custom_vars']??'');
-                        $kb=injectOwnerEditBtn($kb,$gPage['id']??'',$uid,$s['adminId']??'');
-                        sendLong($botId,$chatId,$msgId,$rt,$gPage['media_main']??'',$kb,$gEdit,$token);
-                    }else{execPage($botId,$chatId,$msgId,$u,$db,$s,'',$gPage,$token);}
+                    runMatchedPage($botId,$chatId,$msgId,$u,$db,$s,'',$gPage,$token);
                 }
             }
         }elseif(str_starts_with($cbd,'pg|')){
@@ -3983,51 +4149,8 @@ if(isset($_GET['webhook_bot'])){
 
                 if(!empty($p['is_free_text']))continue;
                 if(strtolower(trim($p['trigger']??''))!==strtolower($cmdStr))continue;
-                bumpAnalytics($botId,'cmd',$p['id']??'');
-                if(!empty($p['force_join'])&&!empty($fj['enabled'])){
-                    if(!checkForceJoin($uid,$fj,$token)){sendForceJoinMsg($chatId,$fj,$token);http_response_code(200);exit;}
-                }
-                if(!hasAccess($uid,$chatId,$p['access_control']??'',$s['global_vars']??'')){
-                    if(!empty($p['fallback_page'])){$fb=null;foreach(($db['pages']??[]) as $p2){if($p2['id']==$p['fallback_page']){$fb=$p2;break;}}if($fb)$p=$fb;else{http_response_code(200);exit;}}
-                    else{http_response_code(200);exit;}
-                }
-                if($p['type']==='text'){
-                    saveDB($botId,$db);
-                    $rt=pv($p['text']??'',$u,$s,$query,$p['custom_vars']??'',null,null,$db);
-                    $kb=buildKb($p['buttons']??[],$u,$s,$query,$p['custom_vars']??'');
-
-                    $kb=injectOwnerEditBtn($kb,$p['id']??'',$uid,$s['adminId']??'');
-
-                    if(!empty(trim($p['sticker_id']??''))){
-                        $stkId=pv($p['sticker_id'],$u,$s,$query,$p['custom_vars']??'');
-                        sendSticker($chatId,trim($stkId),$token);
-                        usleep(300000);
-                    }
-
-                    if(!empty(trim($p['document_url']??''))){
-                        $docUrl=pv($p['document_url'],$u,$s,$query,$p['custom_vars']??'',null,null,$db);
-                        sendDocument($chatId,$docUrl,$rt,$kb,$token);
-                    }else{
-                        sendLong($botId,$chatId,null,$rt,$p['media_main']??'',$kb,false,$token);
-                    }
-                    addLog($botId,"Cmd: /$cmdStr by $name",'info');
-                }else{
-                    if(!empty($p['requires_credit'])&&empty($u['key'])&&($u['searchesLeft']??0)<=0){
-                        tg('sendMessage',['chat_id'=>$chatId,'text'=>'🔑 Quota empty. Use /redeem [key]'],$token);http_response_code(200);exit;
-                    }
-                    if(!$query&&$p['type']==='api'){
-                        if(!empty(trim($p['msg_missing']??''))||!empty($p['media_missing']??''))
-                            sendMsg($chatId,null,pv($p['msg_missing']??'🔍 Send something',$u,$s,$cmdStr,$p['custom_vars']??''),$p['media_missing']??'',null,false,$token);
-                        http_response_code(200);exit;
-                    }
-                    if(!empty($p['requires_credit'])&&($u['searchesLeft']??0)!=999999)$u['searchesLeft']--;
-                    $u['searches']=($u['searches']??0)+1;$db['stats']['searches']++;saveDB($botId,$db);
-                    if($p['type']==='browser'){
-                        execBrowser($botId,$chatId,null,$u,$db,$s,$query,$p,$token);
-                    }else{
-                        execPage($botId,$chatId,null,$u,$db,$s,$query,$p,$token);
-                    }
-                }
+                runMatchedPage($botId,$chatId,null,$u,$db,$s,$query,$p,$token);
+                addLog($botId,"Cmd: /$cmdStr by $name",'info');
                 http_response_code(200);exit;
             }
             http_response_code(200);exit;
@@ -4056,6 +4179,10 @@ if(isset($_GET['webhook_bot'])){
             http_response_code(200);exit;
         }
         // Website Form Capture: user is filling a form triggered from website
+        if(str_starts_with($activePgId,'__wiz__')){
+            handleWizardReply($botId,$chatId,$u,$db,$s,$msgText,$token);
+            http_response_code(200);exit;
+        }
         if(str_starts_with($activePgId,'__lafc__')){
             handleLaFormCapture($botId,$chatId,$u,$db,$s,$msgText,$token);
             http_response_code(200);exit;
@@ -4072,22 +4199,7 @@ if(isset($_GET['webhook_bot'])){
                     if(stripos($msgText,'@'.$botUsername)===false)$skip=true;
                 }
                 if(!$skip){
-                    if(!empty($activePg['requires_credit'])&&empty($u['key'])&&($u['searchesLeft']??0)<=0){
-                        tg('sendMessage',['chat_id'=>$chatId,'text'=>'ð Quota empty. Use /redeem [key]'],$token);
-                        http_response_code(200);exit;
-                    }
-                    if(!empty($activePg['requires_credit'])&&($u['searchesLeft']??0)!=999999)$u['searchesLeft']--;
-                    $u['searches']=($u['searches']??0)+1;$db['stats']['searches']++;
-                    saveDB($botId,$db);
-                    if($activePg['type']==='text'){
-                        $rt=pv($activePg['text']??'',$u,$s,$msgText,$activePg['custom_vars']??'',null,null,$db);
-                        $kb=buildKb($activePg['buttons']??[],$u,$s,$msgText,$activePg['custom_vars']??'');
-                        sendLong($botId,$chatId,null,$rt,$activePg['media_main']??'',$kb,false,$token);
-                    }elseif($activePg['type']==='browser'){
-                        execBrowser($botId,$chatId,null,$u,$db,$s,$msgText,$activePg,$token);
-                    }else{
-                        execPage($botId,$chatId,null,$u,$db,$s,$msgText,$activePg,$token);
-                    }
+                    runMatchedPage($botId,$chatId,null,$u,$db,$s,$msgText,$activePg,$token);
                     addLog($botId,"ActivePage[{$activePgId}]: ".mb_substr($msgText,0,40)." by $name",'info');
                     http_response_code(200);exit;
                 }
@@ -4437,6 +4549,28 @@ if($pageEarly==='ext_api'){
         default:echo json_encode(['ok'=>false,'error'=>'Unknown action']);exit;
     }
 }
+if($pageEarly==='flow_webhook'){
+    header('Content-Type:application/json');
+    $fwBot=preg_replace('/[^a-zA-Z0-9_]/','_',$_GET['bot_id']??'');
+    $fwPage=trim($_GET['flow']??'');
+    $fwKey=$_GET['key']??'';
+    if(!$fwBot||!$fwPage){http_response_code(400);echo json_encode(['ok'=>false,'error'=>'bot_id and flow required']);exit;}
+    $fwDb=loadDB($fwBot);$fwP=findPageById($fwDb,$fwPage);
+    if(!$fwP||empty($fwP['webhook_enabled'])){http_response_code(404);echo json_encode(['ok'=>false,'error'=>'Flow not found or webhook disabled']);exit;}
+    $fwWk=$fwP['webhook_key']??'';
+    if(!$fwWk||!hash_equals($fwWk,$fwKey)){http_response_code(403);echo json_encode(['ok'=>false,'error'=>'Invalid key']);exit;}
+    $fwQuery=trim($_GET['query']??($_POST['query']??''));
+    $fwChat=trim($_GET['chat_id']??'');
+    $fwTok='';foreach(loadBots() as $fb){if($fb['id']===$fwBot){$fwTok=$fb['token']??'';break;}}
+    if(!$fwChat||!$fwTok){http_response_code(400);echo json_encode(['ok'=>false,'error'=>'chat_id required and bot must have token']);exit;}
+    if(!isset($fwDb['users'][$fwChat])){
+        $fwDb['users'][$fwChat]=['id'=>$fwChat,'name'=>'WebhookUser','username'=>'','searchesLeft'=>999,'searches'=>0,'joined'=>date('Y-m-d H:i:s'),'banned'=>false,'key'=>'','active_page'=>''];
+    }
+    $fwU=&$fwDb['users'][$fwChat];$fwS=$fwDb['settings'];
+    runMatchedPage($fwBot,$fwChat,null,$fwU,$fwDb,$fwS,$fwQuery,$fwP,$fwTok);
+    saveDB($fwBot,$fwDb);
+    echo json_encode(['ok'=>true,'triggered'=>$fwPage,'query'=>$fwQuery]);exit;
+}
 
 if(session_status()===PHP_SESSION_NONE){session_start();}
 $savedActId=$_SESSION['act']??'';
@@ -4670,10 +4804,16 @@ if($page==='api'){
             saveDB($actId,$db);jout(['ok'=>true]);break;
         case 'save_page':
             if(!$actId)jout(['ok'=>false,'error'=>'No Bot']);
-            $np=['id'=>strtolower(preg_replace('/[^a-zA-Z0-9_]/','_',$body['id']?:uniqid('pg_'))),'trigger'=>strtolower(preg_replace('/[^a-zA-Z0-9_]/','_',$body['trigger']??'')),'type'=>$body['type']??'text','is_free_text'=>(bool)($body['is_free_text']??false),'ft_chat_mode'=>$body['ft_chat_mode']??'both','ft_mention_only'=>(bool)($body['ft_mention_only']??false),'ft_access_control'=>$body['ft_access_control']??'','force_join'=>(bool)($body['force_join']??false),'access_control'=>$body['access_control']??'','fallback_page'=>$body['fallback_page']??'','requires_credit'=>(bool)($body['requires_credit']??false),'media_main'=>$body['media_main']??'','media_missing'=>$body['media_missing']??'','media_error'=>$body['media_error']??'','document_url'=>$body['document_url']??'','custom_vars'=>$body['custom_vars']??'','text'=>$body['text']??'','api_url'=>$body['api_url']??'','json_root'=>$body['json_root']??'','not_found'=>$body['not_found']??'','msg_missing'=>$body['msg_missing']??'','msg_loading'=>$body['msg_loading']??'','loading_steps'=>$body['loading_steps']??[],'api_timeout'=>(int)($body['api_timeout']??15),'api_retry'=>(bool)($body['api_retry']??false),'buttons'=>$body['buttons']??[],'curl_url'=>$body['curl_url']??'','curl_method'=>$body['curl_method']??'POST','curl_headers'=>$body['curl_headers']??'','curl_body'=>$body['curl_body']??'','curl_response_path'=>$body['curl_response_path']??'','curl_timeout'=>(int)($body['curl_timeout']??120),'browser_var_names'=>$body['browser_var_names']??'','browser_done_msg'=>$body['browser_done_msg']??'✅ Done!','browser_steps'=>$body['browser_steps']??[],'sticker_id'=>$body['sticker_id']??''];
+            $np=['id'=>strtolower(preg_replace('/[^a-zA-Z0-9_]/','_',$body['id']?:uniqid('pg_'))),'trigger'=>strtolower(preg_replace('/[^a-zA-Z0-9_]/','_',$body['trigger']??'')),'type'=>$body['type']??'text','is_free_text'=>(bool)($body['is_free_text']??false),'ft_chat_mode'=>$body['ft_chat_mode']??'both','ft_mention_only'=>(bool)($body['ft_mention_only']??false),'ft_access_control'=>$body['ft_access_control']??'','force_join'=>(bool)($body['force_join']??false),'access_control'=>$body['access_control']??'','fallback_page'=>$body['fallback_page']??'','requires_credit'=>(bool)($body['requires_credit']??false),'media_main'=>$body['media_main']??'','media_missing'=>$body['media_missing']??'','media_error'=>$body['media_error']??'','document_url'=>$body['document_url']??'','custom_vars'=>$body['custom_vars']??'','text'=>$body['text']??'','api_url'=>$body['api_url']??'','json_root'=>$body['json_root']??'','not_found'=>$body['not_found']??'','msg_missing'=>$body['msg_missing']??'','msg_loading'=>$body['msg_loading']??'','loading_steps'=>$body['loading_steps']??[],'api_timeout'=>(int)($body['api_timeout']??15),'api_retry'=>(bool)($body['api_retry']??false),'buttons'=>$body['buttons']??[],'curl_url'=>$body['curl_url']??'','curl_method'=>$body['curl_method']??'POST','curl_headers'=>$body['curl_headers']??'','curl_body'=>$body['curl_body']??'','curl_response_path'=>$body['curl_response_path']??'','curl_timeout'=>(int)($body['curl_timeout']??120),'browser_var_names'=>$body['browser_var_names']??'','browser_done_msg'=>$body['browser_done_msg']??'✅ Done!','browser_steps'=>$body['browser_steps']??[],'sticker_id'=>$body['sticker_id']??'','flow_rules'=>$body['flow_rules']??[],'subflow_before'=>$body['subflow_before']??'','subflow_after'=>$body['subflow_after']??'','include_page'=>$body['include_page']??'','rate_limit_max'=>(int)($body['rate_limit_max']??0),'rate_limit_msg'=>$body['rate_limit_msg']??'⏳ Too many requests. Try again later.','webhook_enabled'=>(bool)($body['webhook_enabled']??false),'webhook_key'=>$body['webhook_key']??'','flow_canvas'=>$body['flow_canvas']??null,'wizard_steps'=>$body['wizard_steps']??[],'wizard_final'=>$body['wizard_final']??'','flow_desc'=>$body['flow_desc']??''];
             if(!$np['id'])jout(['ok'=>false,'error'=>'ID required']);
-            $f=false;foreach(($db['pages']??[]) as $ki=>$kv){if($kv['id']==$np['id']){saveFlowVersion($actId,$kv);$db['pages'][$ki]=$np;$f=true;break;}}
-            if(!$f)$db['pages'][]=$np;saveDB($actId,$db);auditLog('save_page',$np['id'],'info');jout(['ok'=>true]);break;
+            $f=false;foreach(($db['pages']??[]) as $ki=>$kv){if($kv['id']==$np['id']){
+                if(!empty($np['webhook_enabled'])&&empty($np['webhook_key']))$np['webhook_key']=$kv['webhook_key']??bin2hex(random_bytes(12));
+                saveFlowVersion($actId,$kv);$db['pages'][$ki]=$np;$f=true;break;
+            }}
+            if(!$f){if(!empty($np['webhook_enabled'])&&empty($np['webhook_key']))$np['webhook_key']=bin2hex(random_bytes(12));$db['pages'][]=$np;}
+            saveDB($actId,$db);auditLog('save_page',$np['id'],'info');
+            $whUrl=!empty($np['webhook_enabled'])?flowWebhookUrl($actId,$np['id'],$np['webhook_key']):'';
+            jout(['ok'=>true,'webhook_url'=>$whUrl,'webhook_key'=>$np['webhook_key']??'']);break;
         case 'duplicate_page':
             $srcId=$body['id']??'';$pg=null;
             foreach($db['pages']??[] as $p){if($p['id']===$srcId){$pg=$p;break;}}
@@ -4681,6 +4821,51 @@ if($page==='api'){
             $pg['id']=uniqid('pg_');$pg['trigger']=($pg['trigger']??'cmd').'_copy';
             $db['pages'][]=$pg;saveDB($actId,$db);auditLog('duplicate_page',$pg['id'],'info');jout(['ok'=>true,'id'=>$pg['id']]);break;
         case 'delete_page':$db['pages']=array_values(array_filter($db['pages'],fn($c)=>$c['id']!==$body['id']));saveDB($actId,$db);auditLog('delete_page',$body['id']??'','warn');jout(['ok'=>true]);break;
+        case 'simulate_flow':
+            if(!$actId)jout(['ok'=>false,'error'=>'No Bot']);
+            $simPid=trim($body['page_id']??'');$simQ=trim($body['query']??'test');
+            if(!$simPid)jout(['ok'=>false,'error'=>'page_id required']);
+            jout(simulatePageFlow($actId,$db,$db['settings'],$simPid,$simQ));break;
+        case 'get_flow_templates':
+            jout(['ok'=>true,'data'=>[
+                ['id'=>'welcome','name'=>'👋 Welcome Bot','desc'=>'Start command with menu buttons'],
+                ['id'=>'search_api','name'=>'🔍 Search API','desc'=>'API lookup with loading steps'],
+                ['id'=>'support_wizard','name'=>'📝 Support Wizard','desc'=>'Multi-step support ticket'],
+                ['id'=>'vip_branch','name'=>'🔀 VIP Branch','desc'=>'Conditional routing by keyword'],
+                ['id'=>'subflow_menu','name'=>'📦 Sub-flow Menu','desc'=>'Main menu calling sub-pages'],
+            ]]);break;
+        case 'import_flow_template':
+            if(!$actId)jout(['ok'=>false,'error'=>'No Bot']);
+            $tplId=preg_replace('/[^a-zA-Z0-9_]/','',$body['template']??'');
+            $tpls=[
+                'welcome'=>['id'=>'welcome','trigger'=>'start','type'=>'text','text'=>"👋 Hello {tg_name}!\n\nWelcome to our bot. Choose an option below:",'buttons'=>[['text'=>'🔍 Search','type'=>'page','target'=>'search_help'],['text'=>'📞 Support','type'=>'page','target'=>'support_wizard']]],
+                'search_api'=>['id'=>'search_demo','trigger'=>'search','type'=>'api','api_url'=>'https://httpbin.org/get?q={query}','json_root'=>'','text'=>'🔍 Result for {query}:\n{args.q}','msg_missing'=>'🔍 Send your search term','loading_steps'=>[['text'=>'⏳ Searching...']],'requires_credit'=>false],
+                'support_wizard'=>['id'=>'support_wizard','trigger'=>'support','type'=>'wizard','wizard_steps'=>[['text'=>'📝 <b>Support Ticket</b>\n\nStep 1: What is your name?','var'=>'name'],['text'=>'📧 Step 2: Your email?','var'=>'email'],['text'=>'💬 Step 3: Describe your issue','var'=>'issue']],'wizard_final'=>'✅ <b>Ticket Received!</b>\n\n👤 Name: {name}\n📧 Email: {email}\n💬 Issue: {issue}\n\nWe will reply soon!'],
+                'vip_branch'=>['id'=>'vip_router','trigger'=>'info','type'=>'text','text'=>'Routing...','flow_rules'=>[['cond'=>'{query} contains vip','page_id'=>'vip_info','else_page_id'=>'free_info']],'buttons'=>[]],
+                'subflow_menu'=>['id'=>'main_menu','trigger'=>'menu','type'=>'text','text'=>'📋 Main Menu','buttons'=>[['text'=>'📊 Stats','type'=>'page','target'=>'stats_page']]],
+            ];
+            if(!isset($tpls[$tplId]))jout(['ok'=>false,'error'=>'Unknown template']);
+            $suffix=substr(uniqid(),-4);
+            if($tplId==='vip_branch'){
+                $db['pages'][]=array_merge($tpls['vip_branch'],['id'=>'vip_router_'.$suffix]);
+                $db['pages'][]=['id'=>'vip_info_'.$suffix,'trigger'=>'vip_info','type'=>'text','text'=>'👑 <b>VIP Info</b>\n\nYou have VIP access!'];
+                $db['pages'][]=['id'=>'free_info_'.$suffix,'trigger'=>'free_info','type'=>'text','text'=>'ℹ️ <b>Free Info</b>\n\nStandard info for all users.'];
+                $ri=count($db['pages'])-3;
+                $db['pages'][$ri]['flow_rules'][0]['page_id']='vip_info_'.$suffix;
+                $db['pages'][$ri]['flow_rules'][0]['else_page_id']='free_info_'.$suffix;
+                saveDB($actId,$db);jout(['ok'=>true,'id'=>$db['pages'][$ri]['id']]);break;
+            }
+            $np=$tpls[$tplId];$np['id']=strtolower($np['id'].'_'.$suffix);
+            $db['pages'][]=$np;saveDB($actId,$db);auditLog('import_flow_template',$np['id'],'info');
+            jout(['ok'=>true,'id'=>$np['id']]);break;
+        case 'regenerate_webhook_key':
+            if(!$actId)jout(['ok'=>false,'error'=>'No Bot']);
+            $wpid=trim($body['page_id']??'');$found=false;
+            foreach($db['pages']??[] as $i=>$pg){if($pg['id']===$wpid){$db['pages'][$i]['webhook_key']=bin2hex(random_bytes(12));$db['pages'][$i]['webhook_enabled']=true;$found=true;break;}}
+            if(!$found)jout(['ok'=>false,'error'=>'Page not found']);
+            saveDB($actId,$db);
+            $wk=$db['pages'][$i]['webhook_key'];
+            jout(['ok'=>true,'webhook_key'=>$wk,'webhook_url'=>flowWebhookUrl($actId,$wpid,$wk)]);break;
 
         case 'get_stickers':jout(['ok'=>true,'data'=>loadStickers($actId)]);break;
         case 'delete_sticker':
@@ -6276,16 +6461,23 @@ body.theme-amoled{--bg:#000;--s:#050505;--s2:#0a0a0a;--s3:#111;}
 
     <div class="card">
 
-      <div class="sh"><div class="st">🚀 FLOW BUILDER</div>
+      <div class="sh"><div class="st">🚀 FLOW BUILDER <span style="font-size:9px;color:var(--p);margin-left:6px">v2.0</span></div>
 
         <div style="display:flex;gap:5px;flex-wrap:wrap">
+          <button class="btn bc bsm" onclick="openFlowSim()">🧪 Simulator</button>
+          <button class="btn bw bsm" onclick="openFlowCanvas()">🎨 Canvas</button>
+          <button class="btn bp bsm" onclick="openFlowTemplates()">📦 Templates</button>
           <button class="btn bg bsm" onclick="exportFlows()">📥 Export</button>
           <button class="btn bg bsm" onclick="g('fimp').click()">📤 Import</button>
           <button class="btn bsu bsm" onclick="openCmdModal()">+ New Page</button>
         </div>
       </div>
 
-      <div class="tr"><div class="tw"><table><thead><tr><th>ID</th><th>Trigger / Free Text</th><th>Type</th><th>Credit</th><th>Force Join</th><th>Action</th></tr></thead><tbody id="cb"></tbody></table></div></div>
+      <div style="background:rgba(0,245,255,.04);border:1px solid var(--b);border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:11px;color:var(--td);line-height:1.8">
+        <b style="color:var(--c)">Flow 2.0:</b> IF/ELSE rules · Sub-flows · Rate limits · Webhook triggers · Wizard steps · Drag canvas · Test simulator
+      </div>
+
+      <div class="tr"><div class="tw"><table><thead><tr><th>ID</th><th>Trigger / Free Text</th><th>Type</th><th>Credit</th><th>Rate</th><th>Action</th></tr></thead><tbody id="cb"></tbody></table></div></div>
     </div>
   </div>
 
@@ -7377,7 +7569,7 @@ body.theme-amoled{--bg:#000;--s:#050505;--s2:#0a0a0a;--s3:#111;}
       </div>
     </div>
 
-    <div class="fgrp"><label class="fl">Type</label><select class="fsel" id="pb-type" onchange="onType()"><option value="text">📄 Static Text</option><option value="api">🌐 API (GET)</option><option value="curl">🔗 cURL / POST</option><option value="browser">🌐 Browser (Selenium/PW)</option></select></div>
+    <div class="fgrp"><label class="fl">Type</label><select class="fsel" id="pb-type" onchange="onType()"><option value="text">📄 Static Text</option><option value="api">🌐 API (GET)</option><option value="curl">🔗 cURL / POST</option><option value="browser">🌐 Browser (Selenium/PW)</option><option value="include">📦 Include / Sub-flow</option><option value="wizard">🧙 Multi-step Wizard</option></select></div>
   </div>
 
   <!-- Free Text options -->
@@ -7412,6 +7604,47 @@ body.theme-amoled{--bg:#000;--s:#050505;--s2:#0a0a0a;--s3:#111;}
     <div class="fgrp"><label class="fl" style="color:var(--r)">🔒 Access Control</label><input type="text" id="pb-ac" class="fi" placeholder="{ADMINS} or 123,456"></div>
 
     <div class="fgrp"><label class="fl" style="color:var(--y)">🔀 Fallback Page ID</label><input type="text" id="pb-fb" class="fi" placeholder="access_denied"></div>
+  </div>
+
+  <!-- ═══ FLOW BUILDER 2.0 ═══ -->
+  <div style="background:rgba(191,90,242,.06);border:1px solid rgba(191,90,242,.35);border-radius:10px;padding:12px;margin-bottom:12px">
+    <div style="font-family:Orbitron;font-size:11px;color:#bf5af2;margin-bottom:10px">⚡ FLOW 2.0 — Advanced</div>
+    <div class="fg mb">
+      <div class="fgrp"><label class="fl">📦 Include Page (sub-flow)</label><input type="text" id="pb-include" class="fi" placeholder="page_id — for Include type"></div>
+      <div class="fgrp"><label class="fl">⬅️ Run Before</label><input type="text" id="pb-sf-before" class="fi" placeholder="page_id"></div>
+      <div class="fgrp"><label class="fl">➡️ Run After</label><input type="text" id="pb-sf-after" class="fi" placeholder="page_id"></div>
+    </div>
+    <div class="fg mb">
+      <div class="fgrp"><label class="fl" style="color:var(--y)">⏱ Rate Limit / hour</label><input type="number" id="pb-rl-max" class="fi" value="0" min="0" placeholder="0=off"></div>
+      <div class="fgrp" style="flex:2"><label class="fl">Rate limit message</label><input type="text" id="pb-rl-msg" class="fi" value="⏳ Too many requests. Try again later."></div>
+    </div>
+    <div class="bb" style="border-color:#bf5af2;padding:10px;margin-bottom:10px">
+      <label class="fl" style="color:#bf5af2">🔀 IF / ELSE Rules</label>
+      <div style="font-size:10px;color:var(--td);margin:4px 0 8px">{query} contains vip · {query} == hello · {tg_searches} > 5</div>
+      <div id="flow-rules-c"></div>
+      <button class="btn bg bsm" onclick="addFlowRule()" style="margin-top:6px">+ Add Rule</button>
+    </div>
+    <div id="f-wizard" style="display:none;margin-bottom:10px">
+      <div class="bb" style="border-color:var(--o);padding:10px">
+        <label class="fl" style="color:var(--o)">🧙 WIZARD STEPS</label>
+        <div id="wiz-steps-c"></div>
+        <button class="btn bg bsm" onclick="addWizStep()" style="margin-top:6px">+ Add Step</button>
+        <div class="fgrp" style="margin-top:8px"><label class="fl">Final message (after all steps)</label><textarea id="pb-wiz-final" class="fta" style="min-height:50px" placeholder="✅ Done! Name: {name}"></textarea></div>
+      </div>
+    </div>
+    <div class="tw2 mb" style="margin-bottom:8px">
+      <label class="tg"><input type="checkbox" id="pb-wh-on" onchange="onWhToggle()"><span class="ts"></span></label>
+      <div><strong style="font-size:12px;color:var(--c)">🔗 Webhook Trigger</strong><div style="font-size:10px;color:var(--td)">External URL can trigger this flow</div></div>
+    </div>
+    <div id="pb-wh-box" style="display:none">
+      <input type="hidden" id="pb-wh-key">
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">
+        <input type="text" id="pb-wh-url" class="fi" readonly style="flex:1;font-size:10px" placeholder="Save page to generate webhook URL">
+        <button class="btn bw bsm" onclick="regenWebhookKey()">🔄 New Key</button>
+        <button class="btn bg bsm" onclick="copyWhUrl()">📋 Copy</button>
+      </div>
+    </div>
+    <div class="fgrp"><label class="fl">📝 Flow Description</label><input type="text" id="pb-flow-desc" class="fi" placeholder="Optional notes for this flow"></div>
   </div>
 
   <!-- API fields -->
@@ -7667,6 +7900,40 @@ body.theme-amoled{--bg:#000;--s:#050505;--s2:#0a0a0a;--s3:#111;}
     <button class="btn bg bsm" onclick="addBtn()" style="margin-top:7px">+ Add Button</button>
   </div>
   <button class="btn bp" onclick="savePage()" style="width:100%;margin-top:14px;padding:11px;font-size:14px">💾 SAVE PAGE</button>
+</div></div>
+
+<!-- FLOW SIMULATOR MODAL -->
+<div class="mbox" id="m-flow-sim"><div class="modal" style="max-width:720px">
+  <button class="mc" onclick="closeModal('m-flow-sim')">✕</button>
+  <h3 style="color:var(--c);margin-bottom:12px;font-family:Orbitron;font-size:12px">🧪 FLOW TEST SIMULATOR</h3>
+  <div class="fg mb">
+    <div class="fgrp"><label class="fl">Page</label><select class="fsel" id="fs-page"></select></div>
+    <div class="fgrp"><label class="fl">Test Query</label><input type="text" id="fs-query" class="fi" value="hello test" placeholder="Simulated user message"></div>
+  </div>
+  <button class="btn bp bsm" onclick="runFlowSim()" style="width:100%;margin-bottom:12px">▶ Run Simulation</button>
+  <div id="fs-out" style="background:var(--s2);border:1px solid var(--b);border-radius:8px;padding:12px;font-family:'Share Tech Mono';font-size:11px;color:var(--td);min-height:120px;max-height:360px;overflow:auto;white-space:pre-wrap">Select a page and run simulation...</div>
+</div></div>
+
+<!-- FLOW CANVAS MODAL -->
+<div class="mbox" id="m-flow-canvas"><div class="modal" style="max-width:900px">
+  <button class="mc" onclick="closeModal('m-flow-canvas')">✕</button>
+  <h3 style="color:#bf5af2;margin-bottom:8px;font-family:Orbitron;font-size:12px">🎨 FLOW CANVAS</h3>
+  <div style="font-size:10px;color:var(--td);margin-bottom:8px">Drag nodes · Double-click to edit page · Saved with page on Save</div>
+  <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap">
+    <select class="fsel" id="fc-page" onchange="loadFlowCanvas()" style="flex:1;min-width:140px"></select>
+    <button class="btn bg bsm" onclick="fcAddNode('trigger')">+ Trigger</button>
+    <button class="btn bg bsm" onclick="fcAddNode('condition')">+ IF</button>
+    <button class="btn bg bsm" onclick="fcAddNode('page')">+ Page</button>
+    <button class="btn bp bsm" onclick="fcSaveCanvas()">💾 Save Canvas</button>
+  </div>
+  <div id="fc-wrap" style="position:relative;height:420px;background:repeating-linear-gradient(0deg,transparent,transparent 19px,rgba(255,255,255,.03) 19px,rgba(255,255,255,.03) 20px),repeating-linear-gradient(90deg,transparent,transparent 19px,rgba(255,255,255,.03) 19px,rgba(255,255,255,.03) 20px);border:1px solid var(--b);border-radius:8px;overflow:hidden"></div>
+</div></div>
+
+<!-- FLOW TEMPLATES MODAL -->
+<div class="mbox" id="m-flow-tpl"><div class="modal" style="max-width:640px">
+  <button class="mc" onclick="closeModal('m-flow-tpl')">✕</button>
+  <h3 style="color:var(--o);margin-bottom:12px;font-family:Orbitron;font-size:12px">📦 FLOW MARKETPLACE / TEMPLATES</h3>
+  <div id="flow-tpl-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px"></div>
 </div></div>
 
   <!-- PROMO BOT PANEL -->
@@ -8846,14 +9113,114 @@ function onType(){
   g('f-curl').style.display=t==='curl'?'block':'none';
   g('f-ext').style.display=(t==='api'||t==='curl')?'block':'none';
   g('f-browser').style.display=t==='browser'?'block':'none';
+  if(g('f-wizard'))g('f-wizard').style.display=t==='wizard'?'block':'none';
+}
+function onWhToggle(){if(g('pb-wh-box'))g('pb-wh-box').style.display=g('pb-wh-on')?.checked?'block':'none';}
+function addFlowRule(d={}){
+  const c=g('flow-rules-c');if(!c)return;
+  const row=document.createElement('div');row.className='flow-rule-row';row.style.cssText='display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap';
+  row.innerHTML=`<input type="text" class="fi fr-cond" placeholder="IF {query} contains vip" value="${(d.cond||'').replace(/"/g,'&quot;')}" style="flex:2;min-width:140px">
+    <input type="text" class="fi fr-then" placeholder="Then page_id" value="${d.page_id||''}" style="flex:1">
+    <input type="text" class="fi fr-else" placeholder="Else page_id" value="${d.else_page_id||''}" style="flex:1">
+    <button class="btn bd bsm" onclick="this.parentElement.remove()">✕</button>`;
+  c.appendChild(row);
+}
+function getFlowRules(){
+  const out=[];document.querySelectorAll('.flow-rule-row').forEach(r=>{
+    const cond=r.querySelector('.fr-cond')?.value||'';if(!cond.trim())return;
+    out.push({cond,page_id:r.querySelector('.fr-then')?.value||'',else_page_id:r.querySelector('.fr-else')?.value||''});
+  });return out;
+}
+function addWizStep(d={}){
+  const c=g('wiz-steps-c');if(!c)return;
+  const row=document.createElement('div');row.className='wiz-row';row.style.cssText='border:1px solid var(--b);border-radius:6px;padding:8px;margin-bottom:6px';
+  row.innerHTML=`<div style="display:flex;gap:6px;margin-bottom:4px"><input type="text" class="fi ws-var" placeholder="var name" value="${d.var||''}" style="width:100px"><button class="btn bd bsm" onclick="this.closest('.wiz-row').remove()">✕</button></div>
+    <textarea class="fta ws-text" style="min-height:45px" placeholder="Step message...">${d.text||''}</textarea>`;
+  c.appendChild(row);
+}
+function getWizSteps(){
+  const out=[];document.querySelectorAll('.wiz-row').forEach(r=>{
+    out.push({var:r.querySelector('.ws-var')?.value||'',text:r.querySelector('.ws-text')?.value||'',media:''});
+  });return out;
+}
+async function regenWebhookKey(){
+  const pid=g('pb-id')?.value?.trim();if(!pid)return toast('Save page ID first','error');
+  const r=await api('regenerate_webhook_key',{page_id:pid});
+  if(r.ok){g('pb-wh-key').value=r.webhook_key||'';g('pb-wh-url').value=r.webhook_url||'';g('pb-wh-on').checked=true;onWhToggle();toast('Webhook key regenerated','success');}
+  else toast(r.error||'Error','error');
+}
+function copyWhUrl(){const u=g('pb-wh-url')?.value;if(!u)return;navigator.clipboard?.writeText(u);toast('Copied!','success');}
+function openFlowSim(){
+  const sel=g('fs-page');if(sel){sel.innerHTML='';(window.PAGES||[]).forEach(p=>{sel.innerHTML+=`<option value="${p.id}">${p.id} (/${p.trigger||'free'})</option>`;});}
+  openModal('m-flow-sim');
+}
+async function runFlowSim(){
+  const pid=g('fs-page')?.value;const q=g('fs-query')?.value||'';
+  const out=g('fs-out');if(out)out.textContent='Running...';
+  const r=await api('simulate_flow',{page_id:pid,query:q});
+  if(out)out.textContent=JSON.stringify(r,null,2);
+}
+function openFlowCanvas(){
+  const sel=g('fc-page');if(sel){sel.innerHTML='';(window.PAGES||[]).forEach(p=>{sel.innerHTML+=`<option value="${p.id}">${p.id}</option>`;});}
+  loadFlowCanvas();openModal('m-flow-canvas');
+}
+window._fcState={nodes:[],pageId:''};
+function loadFlowCanvas(){
+  const pid=g('fc-page')?.value;if(!pid)return;
+  const pg=(window.PAGES||[]).find(p=>p.id===pid);window._fcState.pageId=pid;
+  window._fcState.nodes=(pg?.flow_canvas?.nodes)||[{id:'n1',type:'trigger',label:'/'+(pg?.trigger||'?'),x:40,y:80,data:{}},{id:'n2',type:'page',label:pid,x:220,y:80,data:{page_id:pid}}];
+  fcRender();
+}
+function fcRender(){
+  const wrap=g('fc-wrap');if(!wrap)return;wrap.innerHTML='';
+  window._fcState.nodes.forEach((n,i)=>{
+    const el=document.createElement('div');el.className='fc-node';
+    const colors={trigger:'var(--c)',condition:'#bf5af2',page:'var(--g)'};
+    el.style.cssText=`position:absolute;left:${n.x}px;top:${n.y}px;padding:8px 12px;background:var(--s2);border:2px solid ${colors[n.type]||'var(--b)'};border-radius:8px;cursor:move;font-size:11px;font-family:'Share Tech Mono';min-width:90px;z-index:${i+1}`;
+    el.innerHTML=`<div style="font-size:9px;color:var(--td)">${n.type.toUpperCase()}</div><div>${n.label||'node'}</div>`;
+    let drag=false,sx,sy,ox,oy;
+    el.onmousedown=e=>{drag=true;sx=e.clientX;sy=e.clientY;ox=n.x;oy=n.y;e.preventDefault();};
+    window.onmousemove=e=>{if(!drag)return;n.x=ox+(e.clientX-sx);n.y=oy+(e.clientY-sy);el.style.left=n.x+'px';el.style.top=n.y+'px';};
+    window.onmouseup=()=>{drag=false;};
+    el.ondblclick=()=>{const lbl=prompt('Label',n.label);if(lbl!==null)n.label=lbl;fcRender();};
+    wrap.appendChild(el);
+  });
+}
+function fcAddNode(type){
+  const id='n'+Date.now();window._fcState.nodes.push({id,type,label:type,x:60+Math.random()*200,y:40+Math.random()*200,data:{}});
+  fcRender();
+}
+async function fcSaveCanvas(){
+  const pid=window._fcState.pageId||g('fc-page')?.value;if(!pid)return toast('Select page','error');
+  const pg=(window.PAGES||[]).find(p=>p.id===pid);if(!pg)return toast('Page not found','error');
+  const d={...pg,flow_canvas:{nodes:window._fcState.nodes}};
+  const r=await api('save_page',d);if(r.ok){toast('Canvas saved!','success');loadPages();}else toast(r.error||'Error','error');
+}
+async function openFlowTemplates(){
+  const grid=g('flow-tpl-grid');if(!grid)return;
+  grid.innerHTML='<div style="grid-column:1/-1;text-align:center;color:var(--td)">Loading...</div>';
+  openModal('m-flow-tpl');
+  const r=await api('get_flow_templates');
+  if(!r.ok||!r.data){grid.innerHTML='Error loading templates';return;}
+  grid.innerHTML='';
+  r.data.forEach(t=>{
+    const card=document.createElement('div');
+    card.style.cssText='background:var(--s2);border:1px solid var(--b);border-radius:8px;padding:12px;cursor:pointer';
+    card.innerHTML=`<div style="font-weight:bold;font-size:13px;margin-bottom:4px">${t.name}</div><div style="font-size:10px;color:var(--td)">${t.desc}</div><button class="btn bp bsm" style="width:100%;margin-top:8px">Import</button>`;
+    card.querySelector('button').onclick=async(e)=>{e.stopPropagation();const ir=await api('import_flow_template',{template:t.id});if(ir.ok){toast('Imported '+ir.id,'success');closeModal('m-flow-tpl');loadPages();}else toast(ir.error||'Error','error');};
+    grid.appendChild(card);
+  });
 }
 function openCmdModal(){
-  ['pb-id','pb-trigger','pb-ac','pb-fb','pb-media','pb-mmedia','pb-emedia','pb-vars','pb-apiurl','pb-root','pb-miss','pb-err','pb-text','pb-curl-url','pb-curl-h','pb-curl-b','pb-curl-rp','pb-cpaste','pb-ft-access','pb-docurl','pb-bv-names','pb-bv-done','pb-sticker-id'].forEach(id=>{const el=g(id);if(el)el.value='';});
-  g('pb-type').value='text';if(g('pb-to'))g('pb-to').value='15';if(g('pb-curl-to'))g('pb-curl-to').value='120';
-  ['pb-cr','pb-retry','pb-ccr','pb-ft-on','pb-ft-mention','pb-fj'].forEach(id=>{const el=g(id);if(el)el.checked=false;});
+  ['pb-id','pb-trigger','pb-ac','pb-fb','pb-media','pb-mmedia','pb-emedia','pb-vars','pb-apiurl','pb-root','pb-miss','pb-err','pb-text','pb-curl-url','pb-curl-h','pb-curl-b','pb-curl-rp','pb-cpaste','pb-ft-access','pb-docurl','pb-bv-names','pb-bv-done','pb-sticker-id','pb-include','pb-sf-before','pb-sf-after','pb-flow-desc','pb-wh-key','pb-wh-url','pb-wiz-final'].forEach(id=>{const el=g(id);if(el)el.value='';});
+  g('pb-type').value='text';if(g('pb-to'))g('pb-to').value='15';if(g('pb-curl-to'))g('pb-curl-to').value='120';if(g('pb-rl-max'))g('pb-rl-max').value='0';if(g('pb-rl-msg'))g('pb-rl-msg').value='⏳ Too many requests. Try again later.';
+  ['pb-cr','pb-retry','pb-ccr','pb-ft-on','pb-ft-mention','pb-fj','pb-wh-on'].forEach(id=>{const el=g(id);if(el)el.checked=false;});
   if(g('pb-ft-chatmode'))g('pb-ft-chatmode').value='both';
   g('ft-opts-row').classList.remove('show');g('ft-opts-row').style.display='none';
-  g('btnc').innerHTML='';g('lsc').innerHTML='';g('bsteps-c').innerHTML='';onType();openModal('m-builder');
+  g('btnc').innerHTML='';g('lsc').innerHTML='';g('bsteps-c').innerHTML='';
+  if(g('flow-rules-c'))g('flow-rules-c').innerHTML='';
+  if(g('wiz-steps-c'))g('wiz-steps-c').innerHTML='';
+  onWhToggle();onType();openModal('m-builder');
 }
 window.PAGES=[];
 function editPage(id){
@@ -8888,24 +9255,41 @@ function editPage(id){
   if(g('pb-ft-access'))g('pb-ft-access').value=c.ft_access_control||'';
   g('btnc').innerHTML='';if(c.buttons)c.buttons.forEach(b=>addBtn(b));
   g('lsc').innerHTML='';if(c.loading_steps)c.loading_steps.forEach(ls=>addLS(ls));
+  if(g('pb-include'))g('pb-include').value=c.include_page||'';
+  if(g('pb-sf-before'))g('pb-sf-before').value=c.subflow_before||'';
+  if(g('pb-sf-after'))g('pb-sf-after').value=c.subflow_after||'';
+  if(g('pb-rl-max'))g('pb-rl-max').value=c.rate_limit_max||0;
+  if(g('pb-rl-msg'))g('pb-rl-msg').value=c.rate_limit_msg||'⏳ Too many requests. Try again later.';
+  if(g('pb-flow-desc'))g('pb-flow-desc').value=c.flow_desc||'';
+  if(g('pb-wiz-final'))g('pb-wiz-final').value=c.wizard_final||'';
+  if(g('flow-rules-c')){g('flow-rules-c').innerHTML='';(c.flow_rules||[]).forEach(r=>addFlowRule(r));}
+  if(g('wiz-steps-c')){g('wiz-steps-c').innerHTML='';(c.wizard_steps||[]).forEach(s=>addWizStep(s));}
+  if(g('pb-wh-on'))g('pb-wh-on').checked=!!c.webhook_enabled;
+  if(g('pb-wh-key'))g('pb-wh-key').value=c.webhook_key||'';
+  if(g('pb-wh-url')&&c.webhook_enabled&&c.webhook_key){
+    const base=location.origin+location.pathname;
+    g('pb-wh-url').value=base+'?page=flow_webhook&bot_id='+(typeof ACTIVE_BOT_ID!=='undefined'?ACTIVE_BOT_ID:'')+'&flow='+encodeURIComponent(c.id)+'&key='+encodeURIComponent(c.webhook_key)+'&chat_id=USER_ID&query=hello';
+  }
+  onWhToggle();
   onType();openModal('m-builder');
 }
 async function loadPages(){
   const r=await api('get_pages');const b=g('cb');b.innerHTML='';window.PAGES=r.data||[];
   if(!window.PAGES.length){b.innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--td);padding:16px">No pages yet. Click <b>+ New Page</b>.</td></tr>';return;}
-  const tm={text:'<span class="badge by">TEXT</span>',api:'<span class="badge bc">API</span>',curl:'<span class="badge bpv">CURL</span>'};
-  window.PAGES.forEach(c=>{
-    const trigLabel=c.is_free_text
-      ?`<span class="badge bpv">FREE TEXT</span> <span style="font-size:10px;color:var(--p)">${c.ft_chat_mode||'both'}</span>`
-      :`<span class="badge ba">/${c.trigger||'—'}</span>`;
-    const fjBadge=c.force_join?'<span class="badge bfj" style="font-size:9px">🔒 FJ</span>':'<span style="color:var(--tf);font-size:11px">—</span>';
-    b.innerHTML+=`<tr>
-      <td><b style="color:var(--c);font-family:'Share Tech Mono';font-size:11px">${c.id}</b></td>
+    const tm={text:'<span class="badge by">TEXT</span>',api:'<span class="badge bc">API</span>',curl:'<span class="badge bpv">CURL</span>',browser:'<span class="badge bg">BROWSER</span>',include:'<span class="badge bo">INCLUDE</span>',wizard:'<span class="badge bp">WIZARD</span>'};
+    window.PAGES.forEach(c=>{
+      const trigLabel=c.is_free_text
+        ?`<span class="badge bpv">FREE TEXT</span> <span style="font-size:10px;color:var(--p)">${c.ft_chat_mode||'both'}</span>`
+        :`<span class="badge ba">/${c.trigger||'—'}</span>`;
+      const rlBadge=(c.rate_limit_max||0)>0?`<span class="badge by" style="font-size:9px">${c.rate_limit_max}/h</span>`:'<span style="color:var(--tf);font-size:11px">—</span>';
+      const whBadge=c.webhook_enabled?'<span class="badge bc" style="font-size:9px">🔗</span>':'';
+      b.innerHTML+=`<tr>
+      <td><b style="color:var(--c);font-family:'Share Tech Mono';font-size:11px">${c.id}</b>${whBadge}</td>
       <td>${trigLabel}</td>
       <td>${tm[c.type]||c.type}</td>
       <td>${c.requires_credit?'<span class="badge bi">Paid</span>':'<span class="badge ba">Free</span>'}</td>
-      <td>${fjBadge}</td>
-      <td><button class="btn by bsm" onclick="editPage('${c.id}')">Edit</button> <button class="btn bg bsm" onclick="dupPage('${c.id}')">Dup</button> <button class="btn bd bsm" onclick="if(confirm('Delete?'))api('delete_page',{id:'${c.id}'}).then(r=>{if(r.ok)loadPages();})">Del</button></td>
+      <td>${rlBadge}</td>
+      <td><button class="btn by bsm" onclick="editPage('${c.id}')">Edit</button> <button class="btn bc bsm" onclick="g('fs-page').value='${c.id}';openFlowSim();runFlowSim()">Test</button> <button class="btn bg bsm" onclick="dupPage('${c.id}')">Dup</button> <button class="btn bd bsm" onclick="if(confirm('Delete?'))api('delete_page',{id:'${c.id}'}).then(r=>{if(r.ok)loadPages();})">Del</button></td>
     </tr>`;
   });
 }
@@ -8941,10 +9325,26 @@ async function savePage(){
       browser_var_names:g('pb-bv-names')?.value||'',
       browser_done_msg:g('pb-bv-done')?.value||'✅ Done!',
       browser_steps:getBrowserSteps(),
-      sticker_id:g('pb-sticker-id')?.value?.trim()||''
+      sticker_id:g('pb-sticker-id')?.value?.trim()||'',
+      flow_rules:getFlowRules(),
+      subflow_before:g('pb-sf-before')?.value||'',
+      subflow_after:g('pb-sf-after')?.value||'',
+      include_page:g('pb-include')?.value||'',
+      rate_limit_max:parseInt(g('pb-rl-max')?.value)||0,
+      rate_limit_msg:g('pb-rl-msg')?.value||'',
+      webhook_enabled:g('pb-wh-on')?.checked||false,
+      webhook_key:g('pb-wh-key')?.value||'',
+      wizard_steps:getWizSteps(),
+      wizard_final:g('pb-wiz-final')?.value||'',
+      flow_desc:g('pb-flow-desc')?.value||''
     };
     if(!d.id)return toast('Page ID required!','error');
-    const r=await api('save_page',d);if(r.ok){toast('✅ Saved!','success');closeModal('m-builder');loadPages();}else toast(r.error||'Error','error');
+    const r=await api('save_page',d);
+    if(r.ok){
+      if(r.webhook_url&&g('pb-wh-url'))g('pb-wh-url').value=r.webhook_url+(r.webhook_url.includes('?')?'&':'?')+'chat_id=USER_ID&query=hello';
+      if(r.webhook_key&&g('pb-wh-key'))g('pb-wh-key').value=r.webhook_key;
+      toast('✅ Saved!','success');closeModal('m-builder');loadPages();
+    }else toast(r.error||'Error','error');
   }catch(e){toast('UI Error: '+e.message,'error');console.error(e);}
 }
 
