@@ -5201,9 +5201,10 @@ body.admin-app .wrap{height:100dvh;min-height:100dvh;overflow:hidden;}
 .sb{width:240px;background:rgba(13,17,23,.99);border-right:1px solid var(--b);display:flex;flex-direction:column;position:fixed;top:0;left:0;bottom:0;z-index:10000;transition:transform .3s;overflow-y:auto;}
 .logo{display:flex;align-items:center;gap:12px;padding:18px 16px;border-bottom:1px solid var(--b);}
 .main{margin-left:240px;flex:1;display:flex;flex-direction:column;width:calc(100% - 240px);min-height:100vh;}
-body.admin-app .main{height:100dvh;min-height:100dvh;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;}
+body.admin-app .main{height:100dvh;min-height:100dvh;overflow:hidden;display:flex;flex-direction:column;}
 .topbar{background:rgba(13,17,23,.95);border-bottom:1px solid var(--b);padding:0 18px;height:52px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:50;flex-shrink:0;}
 .con{padding:18px;flex:1;overflow-x:hidden;padding-top:18px;}
+body.admin-app .con{flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;overflow-anchor:none;}
 .panel{display:none;}.panel.active{display:block;}
 .card{background:var(--s);border:1px solid var(--b);border-radius:12px;padding:16px;margin-bottom:14px;width:100%;}
 .sh{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;}
@@ -5269,7 +5270,7 @@ td{padding:9px 11px;vertical-align:middle;}
   .sb.open{transform:translateX(0);}
   .sov.open{display:block;}
   .main{margin-left:0!important;width:100%!important;min-height:100vh;}
-  body.admin-app .main{height:100dvh;min-height:100dvh;}
+  body.admin-app .main{height:100dvh;min-height:100dvh;overflow:hidden;}
   .ham{display:block;}
   .fg{grid-template-columns:1fr;}
   .con{padding:10px;padding-top:10px;}
@@ -7660,30 +7661,29 @@ async function ensureActiveBot(){
 function g(id){return document.getElementById(id);}
 function toast(m,t='info'){const d=document.createElement('div');d.className='toast '+t;d.innerHTML=`<span style="color:var(--${t==='success'?'g':t==='error'?'r':t==='warn'?'y':'c'})">● </span>${m}`;g('tc').appendChild(d);setTimeout(()=>{d.style.opacity=0;d.style.transform='translateX(20px)';setTimeout(()=>d.remove(),300);},3000);}
 function openSb(){g('sb').classList.add('open');g('sov').classList.add('open');document.body.style.overflow='hidden';}
-function closeSb(){g('sb').classList.remove('open');g('sov').classList.remove('open');document.body.style.overflow='';}
+function closeSb(){g('sb').classList.remove('open');g('sov').classList.remove('open');document.body.style.overflow=document.body.classList.contains('admin-app')?'hidden':'';}
 function scrollAppToTop(){
+  const con=document.querySelector('.con');
   const main=document.querySelector('.main');
-  if(main){main.scrollTop=0;main.scrollLeft=0;}
+  [con,main,document.documentElement,document.body].forEach(el=>{if(!el)return;el.scrollTop=0;el.scrollLeft=0;});
   window.scrollTo(0,0);
-  document.documentElement.scrollTop=0;
-  document.body.scrollTop=0;
   const ap=document.querySelector('.panel.active');
-  if(ap){ap.scrollTop=0;}
+  if(ap)ap.scrollTop=0;
 }
 function nav(id,btn){
-  scrollAppToTop();
   document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.ni').forEach(n=>n.classList.remove('active'));
   g('p-'+id).classList.add('active');btn.classList.add('active');closeSb();
   scrollAppToTop();
-  requestAnimationFrame(scrollAppToTop);
+  requestAnimationFrame(()=>{scrollAppToTop();requestAnimationFrame(scrollAppToTop);});
   const m={dash:()=>{loadDash();checkBot();loadLogs();},bots:loadBots,users:loadUsers,ukeys:loadUK,lkeys:loadLK,builder:loadPages,cfg:loadCfg,vault:loadVault,bvars:loadBV,dvars:loadDynVars,fj:loadFj,broadcast:()=>{dmLoadStickers();dmLoadEmojis();dmsLoadStickers();dmsLoadEmojis();},guide:()=>{},stickers:refreshStickers,forwards:refreshForwards,welcome:loadWelcome,tagger:()=>{loadTagger();utLoadEmojiPicker();},hiddeneye:loadHiddenEye,apkrenamer:apkrLoad,promobot:promoLoad,rosebot:roseLoad,linkautomation:laLoad,depositbot:rbdInit,linkrunner:lrInit,adharbot:adharBotInit};
   const run=m[id];
   if(run){
     let ret;
     try{ret=run();}catch(e){ret=null;}
-    if(ret&&typeof ret.then==='function')ret.finally(scrollAppToTop);
-    else{setTimeout(scrollAppToTop,0);setTimeout(scrollAppToTop,120);setTimeout(scrollAppToTop,350);}
+    if(ret&&typeof ret.then==='function'){
+      ret.finally(()=>{scrollAppToTop();requestAnimationFrame(scrollAppToTop);setTimeout(scrollAppToTop,80);});
+    }else{setTimeout(scrollAppToTop,0);setTimeout(scrollAppToTop,120);setTimeout(scrollAppToTop,350);}
   }else setTimeout(scrollAppToTop,0);
 }
 function openModal(id){g(id).classList.add('open');document.body.style.overflow='hidden';const mb=g(id);if(mb)mb.scrollTop=0;}
@@ -7731,14 +7731,16 @@ async function loadUsers(page){
   const reqId=++_usersReqId;
   usersShowHint('');
   if(!ACTIVE_BOT_ID){
+    scrollAppToTop();
     b.innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--td);padding:16px">Loading bot...</td></tr>';
     if(!(await ensureActiveBot())){
       b.innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--y);padding:16px">⚠️ Koi bot select nahi hai.<br><br><b>Bots</b> tab me jao aur apne bot pe <b>✅ Select</b> dabao.</td></tr>';
-      renderUsersPager(0,1,1,30);if(g('users-count'))g('users-count').textContent='';return;
+      renderUsersPager(0,1,1,30);if(g('users-count'))g('users-count').textContent='';scrollAppToTop();return;
     }
   }
   usersShowHint('Active bot: '+ACTIVE_BOT_NAME);
   b.innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--td);padding:16px">Loading...</td></tr>';
+  scrollAppToTop();
   let r;
   try{
     const res=await fetch(A+'get_users',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':CSRF_TOKEN},body:JSON.stringify({page:_usersPage,limit:30,search,botId:ACTIVE_BOT_ID})});
@@ -7759,6 +7761,8 @@ async function loadUsers(page){
   }).join('');
   b.innerHTML=rows;
   renderUsersPager(total,r.page||1,r.pages||1,limit);
+  scrollAppToTop();
+  requestAnimationFrame(scrollAppToTop);
 }
 async function loadUK(){const r=await api('get_ukeys');const b=g('ukb');b.innerHTML='';if(!r.data?.length){b.innerHTML='<tr><td colspan="5" style="text-align:center;color:var(--td);padding:12px">None</td></tr>';return;}r.data.forEach(k=>b.innerHTML+=`<tr><td style="color:var(--c);font-family:'Share Tech Mono';font-size:11px">${k.key}</td><td>${k.searches}</td><td style="font-size:11px">${k.expires||'Never'}</td><td><span class="badge ${k.status==='active'?'ba':'bi'}">${k.status}</span></td><td><button class="btn bd bsm" onclick="api('delete_ukey',{id:'${k.id}'}).then(loadUK)">Del</button></td></tr>`);}
 async function loadLK(){const r=await api('get_lkeys');const b=g('lkb');b.innerHTML='';if(!r.data?.length){b.innerHTML='<tr><td colspan="5" style="text-align:center;color:var(--td);padding:12px">None</td></tr>';return;}r.data.forEach(k=>b.innerHTML+=`<tr><td style="color:var(--c);font-family:'Share Tech Mono';font-size:11px">${k.key}</td><td><span class="badge bc">${k.tier||'STD'}</span></td><td>${k.searches}</td><td><span class="badge ${k.status==='active'?'ba':'bi'}">${k.status}</span></td><td><button class="btn bd bsm" onclick="api('delete_lkey',{id:'${k.id}'}).then(loadLK)">Del</button></td></tr>`);}
