@@ -5174,11 +5174,11 @@ RENDER:
 <!DOCTYPE html><html lang="en"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="color-scheme" content="dark"><meta name="theme-color" content="#030712">
-<title>REBEL ADMIN v7.1</title>
+<title>REBEL ADMIN v8 — Advanced</title>
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@400;500;600&family=Share+Tech+Mono&display=swap" rel="stylesheet">
 
 <style>
-:root{--bg:#030712;--s:#0d1117;--s2:#161b22;--s3:#1c2130;--c:#00f5ff;--g:#39ff14;--r:#ff2d55;--y:#ffd60a;--p:#bf5af2;--o:#ff9f0a;--b:rgba(0,245,255,.15);--t:#e6edf3;--td:#8b949e;--tf:#4a5568;--sb-w:240px;--topbar-h:52px;--app-h:100dvh;}
+:root{--bg:#030712;--s:#0d1117;--s2:#161b22;--s3:#1c2130;--c:#00f5ff;--g:#39ff14;--r:#ff2d55;--y:#ffd60a;--p:#bf5af2;--o:#ff9f0a;--b:rgba(0,245,255,.15);--t:#e6edf3;--td:#8b949e;--tf:#4a5568;--sb-w:260px;--topbar-h:56px;--app-h:100dvh;}
 
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
 html,body{height:100%;margin:0;padding:0;}
@@ -5273,6 +5273,72 @@ td{padding:9px 11px;vertical-align:middle;}
 
 /* FIX indicator box */
 .fix-note{background:rgba(57,255,20,.05);border:1px solid rgba(57,255,20,.3);border-radius:8px;padding:10px 12px;font-family:'Share Tech Mono';font-size:11px;color:var(--g);margin-bottom:12px;line-height:1.8;}
+
+/* ═══ ADVANCED PANEL v8 ═══ */
+:root{--glass:rgba(13,17,23,.82);--glow:0 0 24px rgba(0,245,255,.08);}
+body.admin-app{background:radial-gradient(ellipse 120% 80% at 10% -10%,rgba(0,245,255,.07),transparent 50%),radial-gradient(ellipse 80% 60% at 100% 0,rgba(191,90,242,.06),transparent 45%),var(--bg)!important;}
+body.admin-app::before{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(0,245,255,.03) 1px,transparent 1px),linear-gradient(90deg,rgba(0,245,255,.03) 1px,transparent 1px);background-size:32px 32px;pointer-events:none;z-index:0;opacity:.35;}
+body.admin-app .wrap,body.admin-app .main{position:relative;z-index:1;}
+.sb{background:var(--glass);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-right:1px solid rgba(0,245,255,.12);box-shadow:4px 0 32px rgba(0,0,0,.35);}
+.logo{padding:16px;border-bottom:1px solid rgba(0,245,255,.1);background:linear-gradient(135deg,rgba(0,245,255,.06),transparent);}
+.logo-badge{display:inline-flex;align-items:center;gap:4px;font-size:9px;font-family:'Share Tech Mono';color:var(--g);background:rgba(57,255,20,.1);border:1px solid rgba(57,255,20,.25);padding:2px 7px;border-radius:20px;margin-top:4px;}
+.sb-search{margin:8px 12px 4px;position:relative;}
+.sb-search input{width:100%;background:rgba(0,0,0,.25);border:1px solid var(--b);border-radius:8px;padding:8px 10px 8px 32px;font-size:12px;color:var(--t);font-family:'Share Tech Mono';outline:none;}
+.sb-search input:focus{border-color:var(--c);box-shadow:0 0 0 2px rgba(0,245,255,.12);}
+.sb-search::before{content:'🔍';position:absolute;left:10px;top:50%;transform:translateY(-50%);font-size:12px;opacity:.7;pointer-events:none;}
+.sb-bot-card{margin:8px 12px;padding:10px 11px;background:linear-gradient(135deg,rgba(57,255,20,.08),rgba(0,245,255,.04));border:1px solid rgba(57,255,20,.22);border-radius:10px;font-family:'Share Tech Mono';font-size:11px;}
+.nav-grp{margin:4px 0;}
+.nav-grp-h{display:flex;align-items:center;justify-content:space-between;width:100%;padding:8px 14px 6px;border:none;background:none;color:var(--tf);font-family:'Share Tech Mono';font-size:9px;letter-spacing:1.2px;text-transform:uppercase;cursor:pointer;}
+.nav-grp-h:hover{color:var(--td);}
+.nav-grp-h span{transition:transform .2s;}
+.nav-grp.collapsed .nav-grp-h span{transform:rotate(-90deg);}
+.nav-grp.collapsed .nav-grp-body{display:none;}
+.nav-grp-body{padding-bottom:2px;}
+.ni{padding:8px 14px 8px 18px;font-size:12.5px;border-radius:0 8px 8px 0;margin:1px 8px 1px 0;width:calc(100% - 8px);}
+.ni:hover{background:rgba(0,245,255,.08);transform:translateX(2px);}
+.ni.active{background:linear-gradient(90deg,rgba(0,245,255,.14),rgba(0,245,255,.04));color:var(--c);font-weight:600;box-shadow:inset 3px 0 0 var(--c);}
+.ni-prem{border-left:2px solid transparent!important;}
+.topbar{background:var(--glass);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-bottom:1px solid rgba(0,245,255,.1);gap:12px;}
+.topbar-mid{flex:1;min-width:0;display:flex;align-items:center;gap:10px;}
+.topbar-crumb{font-family:'Orbitron',sans-serif;font-size:11px;color:var(--c);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.topbar-sub{font-size:10px;color:var(--td);font-family:'Share Tech Mono';white-space:nowrap;}
+.topbar-actions{display:flex;align-items:center;gap:8px;flex-shrink:0;}
+.topbar-btn{background:rgba(0,245,255,.06);border:1px solid rgba(0,245,255,.2);color:var(--c);border-radius:8px;padding:6px 10px;font-size:11px;font-family:'Share Tech Mono';cursor:pointer;white-space:nowrap;}
+.topbar-btn:hover{background:rgba(0,245,255,.12);}
+.status-dot{width:8px;height:8px;border-radius:50%;background:var(--td);flex-shrink:0;}
+.status-dot.on{background:var(--g);box-shadow:0 0 8px var(--g);animation:pulseDot 2s infinite;}
+@keyframes pulseDot{0%,100%{opacity:1}50%{opacity:.5}}
+body.admin-app .panel.active{animation:panelIn .22s ease;}
+@keyframes panelIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.card{background:linear-gradient(160deg,rgba(22,27,34,.95),rgba(13,17,23,.98));border:1px solid rgba(0,245,255,.12);box-shadow:0 4px 20px rgba(0,0,0,.25);transition:border-color .2s,box-shadow .2s;}
+.card:hover{border-color:rgba(0,245,255,.22);box-shadow:0 6px 28px rgba(0,0,0,.35),var(--glow);}
+.sc{background:linear-gradient(145deg,rgba(0,245,255,.06),rgba(13,17,23,.9));border:1px solid rgba(0,245,255,.15);transition:transform .2s;}
+.sc:hover{transform:translateY(-2px);}
+.sn{font-size:22px;background:linear-gradient(135deg,var(--c),var(--g));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
+.dash-hero{background:linear-gradient(135deg,rgba(0,245,255,.08),rgba(191,90,242,.06));border:1px solid rgba(0,245,255,.2);border-radius:14px;padding:16px 18px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}
+.dash-hero h2{font-family:'Orbitron',sans-serif;font-size:14px;color:var(--c);margin-bottom:4px;}
+.dash-hero p{font-size:12px;color:var(--td);line-height:1.6;max-width:520px;}
+.dash-quick{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;margin-bottom:14px;}
+.dq-btn{display:flex;flex-direction:column;align-items:flex-start;gap:4px;padding:12px;border-radius:10px;border:1px solid var(--b);background:var(--s2);cursor:pointer;text-align:left;transition:all .2s;font-family:'Rajdhani',sans-serif;color:var(--t);}
+.dq-btn:hover{border-color:var(--c);background:rgba(0,245,255,.06);transform:translateY(-1px);}
+.dq-btn strong{font-size:12px;color:var(--c);}
+.dq-btn span{font-size:10px;color:var(--td);font-family:'Share Tech Mono';}
+.dash-feat{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px;margin-bottom:14px;}
+.df-card{padding:14px;border-radius:12px;border:1px solid rgba(191,90,242,.25);background:linear-gradient(145deg,rgba(191,90,242,.08),rgba(13,17,23,.95));}
+.df-card.g{border-color:rgba(57,255,20,.3);background:linear-gradient(145deg,rgba(57,255,20,.07),rgba(13,17,23,.95));}
+.df-card h3{font-family:'Orbitron';font-size:10px;color:var(--p);margin-bottom:6px;}
+.df-card.g h3{color:var(--g);}
+.df-card p{font-size:11px;color:var(--td);line-height:1.7;margin-bottom:10px;}
+.cmd-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);backdrop-filter:blur(4px);z-index:999999;align-items:flex-start;justify-content:center;padding:max(60px,8vh) 16px 16px;}
+.cmd-overlay.open{display:flex;}
+.cmd-box{width:100%;max-width:520px;background:var(--s);border:1px solid rgba(0,245,255,.25);border-radius:14px;overflow:hidden;box-shadow:0 24px 64px rgba(0,0,0,.6);}
+.cmd-inp{width:100%;padding:14px 16px;background:var(--s2);border:none;border-bottom:1px solid var(--b);color:var(--t);font-family:'Share Tech Mono';font-size:14px;outline:none;}
+.cmd-list{max-height:min(360px,50vh);overflow-y:auto;padding:6px;}
+.cmd-item{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;cursor:pointer;font-size:13px;color:var(--td);}
+.cmd-item:hover,.cmd-item.sel{background:rgba(0,245,255,.08);color:var(--t);}
+.cmd-item kbd{margin-left:auto;font-size:9px;color:var(--tf);font-family:'Share Tech Mono';}
+.cmd-foot{padding:8px 12px;font-size:10px;color:var(--tf);font-family:'Share Tech Mono';border-top:1px solid var(--b);}
+.sb-foot{padding:10px 12px;border-top:1px solid var(--b);font-size:10px;color:var(--tf);font-family:'Share Tech Mono';text-align:center;}
 @media(max-width:1024px){
   :root{--sb-w:220px;}
   .fg{grid-template-columns:repeat(auto-fit,minmax(150px,1fr));}
@@ -5312,9 +5378,10 @@ td{padding:9px 11px;vertical-align:middle;}
   .lb{padding:24px 20px;}
   .btn{min-height:44px;}
   .ni{min-height:44px;padding:12px 16px;font-size:14px;}
-  .bsm{min-height:40px;padding:8px 12px;}
-}
-@media(hover:none) and (pointer:coarse){
+  .topbar-btn{padding:6px 8px;font-size:10px;}
+  .topbar-sub{display:none;}
+  .dash-hero h2{font-size:12px;}
+  .cmd-overlay{padding-top:max(20px,env(safe-area-inset-top));}
   .btn,.ni,.ham{min-height:44px;}
   .fi,.fsel,.fta{font-size:16px;}
 }
@@ -5331,7 +5398,7 @@ td{padding:9px 11px;vertical-align:middle;}
   <div style="font-size:40px;margin-bottom:8px">🤖</div>
   <h1 style="font-family:Orbitron;color:var(--c);margin-bottom:4px;font-size:20px">REBEL ADMIN</h1>
 
-  <div style="font-size:11px;color:var(--td);font-family:'Share Tech Mono';margin-bottom:22px">v7.1 Fixed</div>
+  <div style="font-size:11px;color:var(--td);font-family:'Share Tech Mono';margin-bottom:22px">v8 Advanced · Selenium + Playwright</div>
   <?php if(!empty($loginErr)):?><div style="color:var(--r);font-size:12px;margin-bottom:10px;padding:8px;background:rgba(255,45,85,.1);border-radius:6px"><?=htmlspecialchars($loginErr,ENT_QUOTES,'UTF-8')?></div><?php endif?>
   <form method="POST">
     <input type="hidden" name="<?=CSRF_TOKEN_NAME?>" value="<?=csrfToken()?>">
@@ -5348,52 +5415,85 @@ td{padding:9px 11px;vertical-align:middle;}
 <div class="wrap">
 <aside class="sb" id="sb">
 
-  <div class="logo"><div style="font-size:22px">🤖</div><div><h2 style="font-family:Orbitron;color:var(--c);font-size:12px">REBEL ADMIN</h2><div style="font-size:10px;color:var(--td);font-family:'Share Tech Mono'">v7.1 Fixed</div></div></div>
+  <div class="logo"><div style="font-size:26px">🤖</div><div><h2 style="font-family:Orbitron;color:var(--c);font-size:13px">REBEL ADMIN</h2><div class="logo-badge">⚡ v8 ADVANCED</div></div></div>
 
-  <div style="margin:10px 12px;padding:9px;background:rgba(57,255,20,.05);border:1px solid rgba(57,255,20,.2);border-radius:8px;font-family:'Share Tech Mono';font-size:11px">
+  <div class="sb-search"><input type="search" id="sbFilter" placeholder="Search menu..." autocomplete="off" oninput="filterNav(this.value)"></div>
 
-    <div style="color:var(--td);font-size:9px">ACTIVE BOT</div>
-
-    <div style="color:var(--g);font-weight:bold;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" id="abN"><?=htmlspecialchars($actName)?></div>
+  <div class="sb-bot-card">
+    <div style="color:var(--td);font-size:9px;text-transform:uppercase;letter-spacing:.8px">Active Bot</div>
+    <div style="color:var(--g);font-weight:bold;margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" id="abN"><?=htmlspecialchars($actName)?></div>
   </div>
-  <nav style="flex:1">
-    <button class="ni active" onclick="nav('dash',this)">📊 Dashboard</button>
-    <button class="ni" onclick="nav('bots',this)">🤖 Manage Bots</button>
-    <button class="ni" onclick="nav('cfg',this)">⚙️ Bot Config &amp; Security</button>
-    <button class="ni" onclick="nav('fj',this)">🔒 Force Join</button>
-    <button class="ni" onclick="nav('welcome',this)">👋 Welcome Message</button>
-    <button class="ni" onclick="nav('tagger',this)">📣 User Tagger</button>
-    <button class="ni" onclick="nav('broadcast',this)">📣 Broadcast</button>
-    <button class="ni" onclick="nav('vault',this)">🔐 API Key Vault</button>
-    <button class="ni" onclick="nav('bvars',this)">📦 Bot Variables</button>
-    <button class="ni" onclick="nav('dvars',this)">🗄️ Live Variables</button>
-    <button class="ni" onclick="nav('builder',this)">🚀 Flow Builder</button>
-    <button class="ni" onclick="nav('users',this)">👥 Users</button>
-    <button class="ni" onclick="nav('ukeys',this)">🔑 User Keys</button>
-    <button class="ni" onclick="nav('lkeys',this)">🪪 Licence Keys</button>
-    <button class="ni" onclick="nav('keygen',this)">⚡ Key Gen</button>
-    <button class="ni" onclick="nav('guide',this)">📖 Full Guide</button>
-    <button class="ni" onclick="nav('stickers',this)">🌟 Sticker Library</button>
-    <button class="ni" onclick="nav('forwards',this)">📨 Forward Library</button>
-    <button class="ni" onclick="nav('premoji',this)">💎 Premium Emoji</button>
-    <button class="ni" onclick="nav('apkrenamer',this)">📦 APK Renamer</button>
-    <button class="ni" onclick="nav('rosebot',this)" style="color:#ff6b9d;border-left:2px solid #ff6b9d">🔥 The Rebel Bot</button>
-    <button class="ni" onclick="nav('hiddeneye',this)" style="color:#39ff14;border-left:2px solid #39ff14">👁 Hidden Eye Bot</button>
-        <button class="ni" onclick="nav('promobot',this)" style="color:#ff9f0a;border-left:2px solid #ff9f0a">📢 Promo Bot</button>
-    <button class="ni" onclick="nav('linkautomation',this)" style="color:#00f5ff;border-left:2px solid #00f5ff">🔗 Link Automation</button>
-    <button class="ni" onclick="nav('depositbot',this)" style="color:#ff6b1a;border-left:2px solid #ff6b1a">💰 Deposit Bot</button>
-    <button class="ni" onclick="nav('linkrunner',this)" style="color:#7c7cff;border-left:2px solid #7c7cff">🔗 Link Runner</button>
-    <button class="ni" onclick="nav('adharbot',this)" style="color:#63b3ed;border-left:2px solid #63b3ed">👾 Aadhaar Bot</button>
-    <a href="?page=logout" class="ni" style="color:var(--r)">🚪 Logout</a>
+  <nav style="flex:1;overflow-y:auto;padding-bottom:8px">
+    <div class="nav-grp" data-grp="core">
+      <button type="button" class="nav-grp-h" onclick="toggleNavGrp(this)">Core <span>▼</span></button>
+      <div class="nav-grp-body">
+        <button class="ni active" data-nav="dash" onclick="nav('dash',this)">📊 Dashboard</button>
+        <button class="ni" data-nav="bots" onclick="nav('bots',this)">🤖 Manage Bots</button>
+        <button class="ni" data-nav="cfg" onclick="nav('cfg',this)">⚙️ Bot Config &amp; Security</button>
+      </div>
+    </div>
+    <div class="nav-grp" data-grp="auto">
+      <button type="button" class="nav-grp-h" onclick="toggleNavGrp(this)">Automation <span>▼</span></button>
+      <div class="nav-grp-body">
+        <button class="ni" data-nav="builder" onclick="nav('builder',this)">🚀 Flow Builder <span style="font-size:9px;color:var(--p);margin-left:auto">Selenium</span></button>
+        <button class="ni" data-nav="fj" onclick="nav('fj',this)">🔒 Force Join</button>
+        <button class="ni" data-nav="welcome" onclick="nav('welcome',this)">👋 Welcome Message</button>
+        <button class="ni" data-nav="tagger" onclick="nav('tagger',this)">📣 User Tagger</button>
+        <button class="ni" data-nav="broadcast" onclick="nav('broadcast',this)">📣 Broadcast</button>
+      </div>
+    </div>
+    <div class="nav-grp" data-grp="data">
+      <button type="button" class="nav-grp-h" onclick="toggleNavGrp(this)">Users &amp; Keys <span>▼</span></button>
+      <div class="nav-grp-body">
+        <button class="ni" data-nav="users" onclick="nav('users',this)">👥 Users</button>
+        <button class="ni" data-nav="ukeys" onclick="nav('ukeys',this)">🔑 User Keys</button>
+        <button class="ni" data-nav="lkeys" onclick="nav('lkeys',this)">🪪 Licence Keys</button>
+        <button class="ni" data-nav="keygen" onclick="nav('keygen',this)">⚡ Key Gen</button>
+        <button class="ni" data-nav="vault" onclick="nav('vault',this)">🔐 API Key Vault</button>
+        <button class="ni" data-nav="bvars" onclick="nav('bvars',this)">📦 Bot Variables</button>
+        <button class="ni" data-nav="dvars" onclick="nav('dvars',this)">🗄️ Live Variables</button>
+      </div>
+    </div>
+    <div class="nav-grp collapsed" data-grp="lib">
+      <button type="button" class="nav-grp-h" onclick="toggleNavGrp(this)">Libraries <span>▼</span></button>
+      <div class="nav-grp-body">
+        <button class="ni" data-nav="stickers" onclick="nav('stickers',this)">🌟 Sticker Library</button>
+        <button class="ni" data-nav="forwards" onclick="nav('forwards',this)">📨 Forward Library</button>
+        <button class="ni" data-nav="premoji" onclick="nav('premoji',this)">💎 Premium Emoji</button>
+        <button class="ni" data-nav="apkrenamer" onclick="nav('apkrenamer',this)">📦 APK Renamer</button>
+        <button class="ni" data-nav="guide" onclick="nav('guide',this)">📖 Full Guide</button>
+      </div>
+    </div>
+    <div class="nav-grp collapsed" data-grp="bots">
+      <button type="button" class="nav-grp-h" onclick="toggleNavGrp(this)">Special Bots <span>▼</span></button>
+      <div class="nav-grp-body">
+        <button class="ni ni-prem" data-nav="rosebot" onclick="nav('rosebot',this)" style="color:#ff6b9d;border-left-color:#ff6b9d">🔥 The Rebel Bot</button>
+        <button class="ni ni-prem" data-nav="hiddeneye" onclick="nav('hiddeneye',this)" style="color:#39ff14;border-left-color:#39ff14">👁 Hidden Eye Bot</button>
+        <button class="ni ni-prem" data-nav="promobot" onclick="nav('promobot',this)" style="color:#ff9f0a;border-left-color:#ff9f0a">📢 Promo Bot</button>
+        <button class="ni ni-prem" data-nav="linkautomation" onclick="nav('linkautomation',this)" style="color:#00f5ff;border-left-color:#00f5ff">🔗 Link Automation</button>
+        <button class="ni ni-prem" data-nav="depositbot" onclick="nav('depositbot',this)" style="color:#ff6b1a;border-left-color:#ff6b1a">💰 Deposit Bot</button>
+        <button class="ni ni-prem" data-nav="linkrunner" onclick="nav('linkrunner',this)" style="color:#7c7cff;border-left-color:#7c7cff">🔗 Link Runner</button>
+        <button class="ni ni-prem" data-nav="adharbot" onclick="nav('adharbot',this)" style="color:#63b3ed;border-left-color:#63b3ed">👾 Aadhaar Bot</button>
+      </div>
+    </div>
+    <a href="?page=logout" class="ni" style="color:var(--r);margin-top:6px">🚪 Logout</a>
   </nav>
+  <div class="sb-foot">Ctrl+K quick jump · v8</div>
 </aside>
 
 <div class="main">
 
   <div class="topbar">
 
-    <div class="topbar-left"><button class="ham" onclick="openSb()" aria-label="Open menu">☰</button><div style="font-family:Orbitron;font-weight:700;font-size:12px;color:var(--c)">REBEL v7.1</div></div>
-    <div class="topbar-bot" id="topBotName"><?=htmlspecialchars($actName)?></div>
+    <div class="topbar-left"><button class="ham" onclick="openSb()" aria-label="Open menu">☰</button><div class="status-dot" id="topStatusDot"></div></div>
+    <div class="topbar-mid">
+      <div class="topbar-crumb" id="topCrumb">Dashboard</div>
+      <div class="topbar-sub" id="topClock"></div>
+    </div>
+    <div class="topbar-actions">
+      <button type="button" class="topbar-btn" onclick="openCmd()" title="Ctrl+K">⌘ Jump</button>
+      <div class="topbar-bot" id="topBotName"><?=htmlspecialchars($actName)?></div>
+    </div>
   </div>
 
   <div class="con">
@@ -5403,7 +5503,37 @@ td{padding:9px 11px;vertical-align:middle;}
 
   <div class="panel active" id="p-dash">
 
-    <div class="sg"><div class="sc"><div class="sn" id="st-u">—</div><div class="sl">👥 Users</div></div><div class="sc"><div class="sn" id="st-s">—</div><div class="sl">🔍 Searches</div></div><div class="sc"><div class="sn" id="st-k">—</div><div class="sl">🔑 Keys</div></div></div>
+    <div class="dash-hero">
+      <div>
+        <h2>⚡ Rebel Command Center</h2>
+        <p>Advanced bot control — Flow Builder with Selenium/Playwright automation, live users, broadcast &amp; special bots. Press <strong style="color:var(--c)">Ctrl+K</strong> to jump anywhere.</p>
+      </div>
+      <button type="button" class="btn bp" onclick="navQuick('builder')">🌐 Browser Automation</button>
+    </div>
+
+    <div class="sg"><div class="sc"><div class="sn" id="st-u">—</div><div class="sl">👥 Users</div></div><div class="sc"><div class="sn" id="st-s">—</div><div class="sl">🔍 Searches</div></div><div class="sc"><div class="sn" id="st-k">—</div><div class="sl">🔑 Keys</div></div><div class="sc"><div class="sn" id="st-p">—</div><div class="sl">📄 Flow Pages</div></div></div>
+
+    <div class="dash-quick">
+      <button type="button" class="dq-btn" onclick="navQuick('users')"><strong>👥 Users</strong><span>Search &amp; manage</span></button>
+      <button type="button" class="dq-btn" onclick="navQuick('builder')"><strong>🚀 Flow Builder</strong><span>Selenium + API</span></button>
+      <button type="button" class="dq-btn" onclick="navQuick('broadcast')"><strong>📣 Broadcast</strong><span>DM studio</span></button>
+      <button type="button" class="dq-btn" onclick="navQuick('cfg')"><strong>⚙️ Config</strong><span>Security &amp; settings</span></button>
+      <button type="button" class="dq-btn" onclick="navQuick('bots')"><strong>🤖 Bots</strong><span>Switch / add</span></button>
+      <button type="button" class="dq-btn" onclick="navQuick('rosebot')"><strong>🔥 Rebel Bot</strong><span>Group mgmt</span></button>
+    </div>
+
+    <div class="dash-feat">
+      <div class="df-card g">
+        <h3>🌐 PREMIUM BROWSER ENGINE</h3>
+        <p>Playwright + Selenium stealth headless Chrome. Captcha pause, iframe, scrape, login templates — inside Flow Builder → Type: Browser.</p>
+        <button type="button" class="btn bsu bsm" onclick="navQuick('builder')">Open Flow Builder</button>
+      </div>
+      <div class="df-card">
+        <h3>💎 ADVANCED FEATURES</h3>
+        <p>Premium emoji, forward library, force join, live variables, deposit bot, link runner &amp; more — grouped in sidebar.</p>
+        <button type="button" class="btn bg bsm" onclick="openCmd()">⌘ Quick Jump (Ctrl+K)</button>
+      </div>
+    </div>
 
     <div class="card" style="border-color:var(--g)">
 
@@ -7676,6 +7806,14 @@ td{padding:9px 11px;vertical-align:middle;}
 </div><!-- /main -->
 </div><!-- /wrap -->
 
+<div class="cmd-overlay" id="cmdOverlay" onclick="if(event.target===this)closeCmd()">
+  <div class="cmd-box" role="dialog" aria-label="Quick jump">
+    <input type="text" class="cmd-inp" id="cmdInp" placeholder="Jump to section… (type to filter)" autocomplete="off" oninput="renderCmdList()" onkeydown="cmdKey(event)">
+    <div class="cmd-list" id="cmdList"></div>
+    <div class="cmd-foot">↑↓ navigate · Enter open · Esc close · Ctrl+K toggle</div>
+  </div>
+</div>
+
 <?php endif ?>
 
 <script>
@@ -7692,6 +7830,48 @@ function setActiveBotName(name){
   if(g('abN'))g('abN').textContent=name;
   if(g('topBotName'))g('topBotName').textContent=name;
 }
+const NAV_LABELS={dash:'Dashboard',bots:'Manage Bots',cfg:'Bot Config & Security',fj:'Force Join',welcome:'Welcome Message',tagger:'User Tagger',broadcast:'Broadcast',vault:'API Key Vault',bvars:'Bot Variables',dvars:'Live Variables',builder:'Flow Builder',users:'Users',ukeys:'User Keys',lkeys:'Licence Keys',keygen:'Key Gen',guide:'Full Guide',stickers:'Sticker Library',forwards:'Forward Library',premoji:'Premium Emoji',apkrenamer:'APK Renamer',rosebot:'The Rebel Bot',hiddeneye:'Hidden Eye Bot',promobot:'Promo Bot',linkautomation:'Link Automation',depositbot:'Deposit Bot',linkrunner:'Link Runner',adharbot:'Aadhaar Bot'};
+const CMD_ITEMS=Object.entries(NAV_LABELS).map(([id,label])=>({id,label,icon:({dash:'📊',bots:'🤖',cfg:'⚙️',builder:'🚀',users:'👥',broadcast:'📣',rosebot:'🔥'}[id]||'▸')}));
+let cmdSel=0;
+function setBreadcrumb(id){const el=g('topCrumb');if(el)el.textContent=NAV_LABELS[id]||id;}
+function navQuick(id){const btn=document.querySelector('.ni[data-nav="'+id+'"]');if(btn)nav(id,btn);else toast('Section not found','error');}
+function toggleNavGrp(h){h.closest('.nav-grp')?.classList.toggle('collapsed');}
+function filterNav(q){
+  q=(q||'').toLowerCase().trim();
+  document.querySelectorAll('.nav-grp').forEach(grp=>{
+    let any=false;
+    grp.querySelectorAll('.ni[data-nav]').forEach(ni=>{
+      const show=!q||ni.textContent.toLowerCase().includes(q);
+      ni.style.display=show?'':'none';
+      if(show)any=true;
+    });
+    grp.style.display=any||!q?'':'none';
+    if(q&&any)grp.classList.remove('collapsed');
+  });
+}
+function openCmd(){g('cmdOverlay')?.classList.add('open');cmdSel=0;renderCmdList();setTimeout(()=>g('cmdInp')?.focus(),50);}
+function closeCmd(){g('cmdOverlay')?.classList.remove('open');if(g('cmdInp'))g('cmdInp').value='';}
+function renderCmdList(){
+  const q=(g('cmdInp')?.value||'').toLowerCase();
+  const list=g('cmdList');if(!list)return;
+  const items=CMD_ITEMS.filter(x=>!q||x.label.toLowerCase().includes(q)||x.id.includes(q));
+  if(cmdSel>=items.length)cmdSel=Math.max(0,items.length-1);
+  list.innerHTML=items.map((x,i)=>'<div class="cmd-item'+(i===cmdSel?' sel':'')+'" data-i="'+i+'" onclick="cmdGo(\''+x.id+'\')"><span>'+x.icon+'</span><span>'+x.label+'</span></div>').join('')||'<div style="padding:12px;color:var(--td);font-size:12px">No match</div>';
+  list.querySelector('.cmd-item.sel')?.scrollIntoView({block:'nearest'});
+}
+function cmdGo(id){closeCmd();navQuick(id);}
+function cmdKey(e){
+  const q=(g('cmdInp')?.value||'').toLowerCase();
+  const items=CMD_ITEMS.filter(x=>!q||x.label.toLowerCase().includes(q)||x.id.includes(q));
+  if(e.key==='Escape'){closeCmd();return;}
+  if(e.key==='ArrowDown'){e.preventDefault();cmdSel=Math.min(cmdSel+1,items.length-1);renderCmdList();return;}
+  if(e.key==='ArrowUp'){e.preventDefault();cmdSel=Math.max(cmdSel-1,0);renderCmdList();return;}
+  if(e.key==='Enter'){e.preventDefault();if(items[cmdSel])cmdGo(items[cmdSel].id);return;}
+  cmdSel=0;
+}
+function tickClock(){const el=g('topClock');if(el)el.textContent=new Date().toLocaleString('en-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:true});}
+setInterval(tickClock,1000);tickClock();
+document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();g('cmdOverlay')?.classList.contains('open')?closeCmd():openCmd();}});
 const A='?page=api&action=';
 const CSRF_TOKEN='<?=csrfToken()?>';
 let ACTIVE_BOT_ID='<?=addslashes($savedActId)?>';
@@ -7719,7 +7899,8 @@ function nav(id,btn){
   document.querySelectorAll('.panel').forEach(p=>{p.classList.remove('active');p.scrollTop=0;});
   document.querySelectorAll('.ni').forEach(n=>n.classList.remove('active'));
   const panel=g('p-'+id);
-  panel.classList.add('active');btn.classList.add('active');closeSb();
+  panel.classList.add('active');if(btn)btn.classList.add('active');closeSb();
+  setBreadcrumb(id);
   scrollPanelTop(id);
   const m={dash:()=>{loadDash();checkBot();loadLogs();},bots:loadBots,users:loadUsers,ukeys:loadUK,lkeys:loadLK,builder:loadPages,cfg:loadCfg,vault:loadVault,bvars:loadBV,dvars:loadDynVars,fj:loadFj,broadcast:()=>{dmLoadStickers();dmLoadEmojis();dmsLoadStickers();dmsLoadEmojis();},guide:()=>{},stickers:refreshStickers,forwards:refreshForwards,welcome:loadWelcome,tagger:()=>{loadTagger();utLoadEmojiPicker();},hiddeneye:loadHiddenEye,apkrenamer:apkrLoad,promobot:promoLoad,rosebot:roseLoad,linkautomation:laLoad,depositbot:rbdInit,linkrunner:lrInit,adharbot:adharBotInit};
   const run=m[id];
@@ -7744,10 +7925,10 @@ async function handleUp(inp){
 }
 async function exportFlows(){const r=await api('get_pages');if(r.ok&&r.data){const b=new Blob([JSON.stringify(r.data,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='rebel_flows.json';a.click();toast('Exported!','success');}}
 function importFlows(inp){if(!inp.files||!inp.files.length)return;const reader=new FileReader();reader.onload=async(e)=>{try{const p=JSON.parse(e.target.result);const r=await api('import_pages',{pages:p.pages||p});if(r.ok){toast('Imported!','success');loadPages();}else toast('Error','error');}catch(e){toast('Invalid JSON','error');};inp.value='';};reader.readAsText(inp.files[0]);}
-async function checkBot(){const r=await api('bot_info');const b=g('dashB');const n=g('dashN');if(!b||!n)return;if(!r.ok||!r.active_name){n.textContent='No Bot';b.className='badge bi';b.textContent='NO BOT';return;}n.textContent=r.active_name;b.className=r.webhook?.url?'badge ba':'badge bi';b.textContent=r.webhook?.url?'🟢 ONLINE':'🔴 OFFLINE';}
+async function checkBot(){const r=await api('bot_info');const b=g('dashB');const n=g('dashN');const dot=g('topStatusDot');if(!b||!n)return;if(!r.ok||!r.active_name){n.textContent='No Bot';b.className='badge bi';b.textContent='NO BOT';if(dot)dot.classList.remove('on');return;}n.textContent=r.active_name;const on=!!r.webhook?.url;b.className=on?'badge ba':'badge bi';b.textContent=on?'🟢 ONLINE':'🔴 OFFLINE';if(dot)dot.classList.toggle('on',on);}
 async function startBot(){const r=await api('start_bot');if(r.ok){toast('✅ Started!','success');checkBot();loadLogs();}else toast('Error: '+(r.error||''),'error');}
 async function stopBot(){const r=await api('stop_bot');if(r.ok){toast('Stopped','info');checkBot();}}
-async function loadDash(){const r=await api('get_stats');if(r.ok&&r.data){g('st-u').textContent=r.data.users;g('st-s').textContent=r.data.searches;g('st-k').textContent=r.data.keys;}}
+async function loadDash(){const[r,p]=await Promise.all([api('get_stats'),api('get_pages')]);if(r.ok&&r.data){g('st-u').textContent=r.data.users;g('st-s').textContent=r.data.searches;g('st-k').textContent=r.data.keys;}if(p.ok&&g('st-p'))g('st-p').textContent=(p.data||[]).length;}
 async function loadLogs(){const r=await api('get_logs');const b=g('logB');if(r.ok&&r.data&&r.data.length){b.innerHTML=r.data.map(l=>`<div><span style="color:var(--tf)">[${new Date(l.time).toLocaleTimeString()}]</span> <span style="color:var(--${l.type==='success'?'g':l.type==='error'?'r':l.type==='warn'?'y':'c'})">${l.text}</span></div>`).join('');}else b.innerHTML='<div style="color:var(--tf)">No logs yet.</div>';}
 
 async function loadBots(){
