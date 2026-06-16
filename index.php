@@ -161,9 +161,85 @@ Glad to have you here 🎉','media'=>'','buttons'=>[]];
     if(!is_array($d['pages']))$d['pages']=[];
     if(isset($d['settings']['pages']))unset($d['settings']['pages']);
 
+    $uf=usersDataFile($id);
+    if(file_exists($uf)){
+        $d['users']=json_decode(file_get_contents($uf),true)?:[];
+    }elseif(!empty($d['users'])&&is_array($d['users'])){
+        saveUsersRaw($id,$d['users']);
+        $strip=$d;unset($strip['users']);
+        file_put_contents($f,json_encode($strip,JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE),LOCK_EX);
+    }else{
+        $d['users']=[];
+    }
+
     return $d;
 }
-function saveDB($id,$d){file_put_contents(getBotDir($id).'data.json',json_encode($d,JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE),LOCK_EX);}
+function saveDB($id,$d){
+    if(isset($d['users'])){
+        saveUsersRaw($id,$d['users']);
+        unset($d['users']);
+    }
+    file_put_contents(getBotDir($id).'data.json',json_encode($d,JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE),LOCK_EX);
+}
+function usersDataFile($id){return getBotDir($id).'users.json';}
+function usersIndexFile($id){return getBotDir($id).'users_index.json';}
+function userListRow($u){
+    return ['id'=>(string)($u['id']??''),'name'=>$u['name']??'','username'=>$u['username']??'','searchesLeft'=>$u['searchesLeft']??0,'key'=>$u['key']??'','banned'=>!empty($u['banned']),'joined'=>$u['joined']??''];
+}
+function saveUsersRaw($id,$users){
+    if(!is_array($users))$users=[];
+    file_put_contents(usersDataFile($id),json_encode($users,JSON_UNESCAPED_UNICODE),LOCK_EX);
+    @unlink(usersIndexFile($id));
+}
+function loadUsersRaw($id){
+    $uf=usersDataFile($id);
+    if(file_exists($uf)){
+        $u=json_decode(file_get_contents($uf),true);
+        return is_array($u)?$u:[];
+    }
+    $f=getBotDir($id).'data.json';
+    if(!file_exists($f))return [];
+    $d=json_decode(file_get_contents($f),true);
+    if(!is_array($d))return [];
+    $users=is_array($d['users']??null)?$d['users']:[];
+    if(!empty($users)){
+        saveUsersRaw($id,$users);
+        unset($d['users']);
+        file_put_contents($f,json_encode($d,JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE),LOCK_EX);
+    }
+    return $users;
+}
+function rebuildUsersIndex($id){
+    $users=loadUsersRaw($id);
+    $rows=[];
+    foreach($users as $u){if(is_array($u))$rows[]=userListRow($u);}
+    usort($rows,fn($a,$b)=>strcmp($b['joined']??'',$a['joined']??''));
+    $idx=['total'=>count($rows),'updated'=>time(),'items'=>$rows];
+    file_put_contents(usersIndexFile($id),json_encode($idx,JSON_UNESCAPED_UNICODE),LOCK_EX);
+    return $idx;
+}
+function loadUsersIndex($id){
+    $uf=usersDataFile($id);$if=usersIndexFile($id);
+    if(file_exists($if)&&file_exists($uf)&&filemtime($if)>=filemtime($uf)){
+        $idx=json_decode(file_get_contents($if),true);
+        if(is_array($idx)&&isset($idx['items'],$idx['total']))return $idx;
+    }
+    return rebuildUsersIndex($id);
+}
+function getUsersPage($id,$page,$limit,$search=''){
+    $idx=loadUsersIndex($id);
+    $rows=$idx['items'];
+    if($search!==''){
+        $uq=strtolower($search);
+        $rows=array_values(array_filter($rows,static function($u)use($uq){
+            return str_contains(strtolower($u['name']??''),$uq)||str_contains(strtolower($u['username']??''),$uq)||str_contains((string)($u['id']??''),$uq)||str_contains(strtolower($u['key']??''),$uq);
+        }));
+    }
+    $total=count($rows);
+    $pages=max(1,(int)ceil($total/max(1,$limit)));
+    if($page>$pages)$page=$pages;
+    return ['data'=>array_slice($rows,($page-1)*$limit,$limit),'total'=>$total,'page'=>$page,'pages'=>$pages,'limit'=>$limit];
+}
 function loadLogs($id){$f=getBotDir($id).'logs.json';return file_exists($f)?(json_decode(file_get_contents($f),true)?:[]):[];}
 function addLog($id,$txt,$type='info'){$l=loadLogs($id);array_unshift($l,['time'=>date('c'),'text'=>$txt,'type'=>$type]);if(count($l)>500)$l=array_slice($l,0,500);file_put_contents(getBotDir($id).'logs.json',json_encode($l),LOCK_EX);}
 function setCache($id,$k,$v){$f=getBotDir($id).'cache.json';$c=file_exists($f)?json_decode(file_get_contents($f),true):[];if(!is_array($c))$c=[];$c[$k]=['t'=>time(),'v'=>$v];foreach($c as $ck=>$cv)if(time()-$cv['t']>3600)unset($c[$ck]);file_put_contents($f,json_encode($c),LOCK_EX);}
@@ -4194,7 +4270,16 @@ if($page==='api'&&$_SERVER['REQUEST_METHOD']==='POST'&&!verifyCsrf()){
 
 if($page==='api'){
     $bots=loadBots();$body=json_decode(file_get_contents('php://input'),true)??[];
-    $actId=$body['botId']??$_SESSION['act']??'';$TOK='';
+    $actId=$body['botId']??$_SESSION['act']??'';
+
+    if($action==='get_users'&&$actId){
+        $uPage=max(1,(int)($body['page']??1));
+        $uLimit=max(10,min(100,(int)($body['limit']??30)));
+        $uSearch=trim($body['search']??'');
+        jout(['ok'=>true]+getUsersPage($actId,$uPage,$uLimit,$uSearch));
+    }
+
+    $TOK='';
     foreach($bots as $b){if($b['id']===$actId){$TOK=$b['token'];break;}}
     if($actId){$db=loadDB($actId);$db['pages']??=[];$db['users']??=[];$db['ukeys']??=[];$db['lkeys']??=[];$db['stats']??=['searches'=>0,'cmds'=>0];$db['settings']??=[];$db['dyn_vars']??=[];}
     else{$db=['users'=>[],'ukeys'=>[],'lkeys'=>[],'stats'=>['searches'=>0,'cmds'=>0],'settings'=>[],'pages'=>[],'dyn_vars'=>[]];}
@@ -4250,27 +4335,12 @@ if($page==='api'){
             $r=tg('setWebhook',$whParams,$TOK);addLog($actId,'Engine Started','success');jout(['ok'=>$r['ok']??false]);break;
         case 'stop_bot':tg('deleteWebhook',[],$TOK);addLog($actId,'Engine Stopped','warn');jout(['ok'=>true]);break;
         case 'get_stats':
-            jout(['ok'=>true,'data'=>['users'=>count($db['users']),'searches'=>$db['stats']['searches']??0,'cmds'=>$db['stats']['cmds']??0,'keys'=>count($db['ukeys'])+count($db['lkeys'])]]);break;
+            $uCnt=(loadUsersIndex($actId)['total']??count($db['users']));
+            jout(['ok'=>true,'data'=>['users'=>$uCnt,'searches'=>$db['stats']['searches']??0,'cmds'=>$db['stats']['cmds']??0,'keys'=>count($db['ukeys'])+count($db['lkeys'])]]);break;
         case 'get_users':
             $uPage=max(1,(int)($body['page']??1));
-            $uLimit=max(10,min(100,(int)($body['limit']??50)));
-            $uSearch=trim($body['search']??'');
-            $allUsers=array_values($db['users']??[]);
-            usort($allUsers,fn($a,$b)=>strcmp($b['joined']??'',$a['joined']??''));
-            if($uSearch!==''){
-                $uq=strtolower($uSearch);
-                $allUsers=array_values(array_filter($allUsers,static function($u)use($uq){
-                    return str_contains(strtolower($u['name']??''),$uq)
-                        || str_contains(strtolower($u['username']??''),$uq)
-                        || str_contains((string)($u['id']??''),$uq)
-                        || str_contains(strtolower($u['key']??''),$uq);
-                }));
-            }
-            $uTotal=count($allUsers);
-            $uPages=max(1,(int)ceil($uTotal/$uLimit));
-            if($uPage>$uPages)$uPage=$uPages;
-            $uSlice=array_slice($allUsers,($uPage-1)*$uLimit,$uLimit);
-            jout(['ok'=>true,'data'=>$uSlice,'total'=>$uTotal,'page'=>$uPage,'pages'=>$uPages,'limit'=>$uLimit]);break;
+            $uLimit=max(10,min(100,(int)($body['limit']??30)));
+            jout(['ok'=>true]+getUsersPage($actId,$uPage,$uLimit,trim($body['search']??'')));break;
         case 'delete_user':unset($db['users'][$body['uid']]);saveDB($actId,$db);jout(['ok'=>true]);break;
         case 'ban_user':$db['users'][$body['uid']]['banned']=true;saveDB($actId,$db);jout(['ok'=>true]);break;
         case 'unban_user':$db['users'][$body['uid']]['banned']=false;saveDB($actId,$db);jout(['ok'=>true]);break;
@@ -7539,35 +7609,41 @@ async function loadBots(){
 }
 async function addBot(){const t=g('abt').value.trim();if(!t)return;toast('Verifying...','info');const r=await api('add_bot',{token:t});if(r.ok){toast('✅ Bot Added!','success');closeModal('m-ab');g('abt').value='';loadBots();}else toast('Error: '+(r.error||'Invalid token'),'error');}
 
-let _usersPage=1,_usersSearchTimer=null;
+let _usersPage=1,_usersSearchTimer=null,_usersAbort=null,_usersLoaded=false;
 function usersEsc(s){return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');}
-function usersSearchDebounced(){clearTimeout(_usersSearchTimer);_usersSearchTimer=setTimeout(()=>loadUsers(1),350);}
-function renderUsersPager(total,page,pages){
+function usersSearchDebounced(){clearTimeout(_usersSearchTimer);_usersSearchTimer=setTimeout(()=>loadUsers(1),400);}
+function renderUsersPager(total,page,pages,limit){
   const p=g('users-pager');if(!p)return;
   if(!total){p.innerHTML='';return;}
-  if(total<=50&&pages<=1){p.innerHTML=`<span style="font-size:11px;color:var(--td)">${total} user(s)</span>`;return;}
-  p.innerHTML=`<span style="font-size:11px;color:var(--td)">Page ${page}/${pages} · ${total} users</span><div style="display:flex;gap:6px"><button class="btn bg bsm" onclick="loadUsers(${page-1})" ${page<=1?'disabled style="opacity:.4;cursor:not-allowed"':''}>◀ Prev</button><button class="btn bg bsm" onclick="loadUsers(${page+1})" ${page>=pages?'disabled style="opacity:.4;cursor:not-allowed"':''}>Next ▶</button></div>`;
+  const from=(page-1)*limit+1;const to=Math.min(page*limit,total);
+  p.innerHTML=`<span style="font-size:11px;color:var(--td)">${from}-${to} of ${total}</span><div style="display:flex;gap:6px"><button class="btn bg bsm" onclick="loadUsers(${page-1})" ${page<=1?'disabled style="opacity:.4;cursor:not-allowed"':''}>◀ Prev</button><button class="btn bg bsm" onclick="loadUsers(${page+1})" ${page>=pages?'disabled style="opacity:.4;cursor:not-allowed"':''}>Next ▶</button></div>`;
 }
 async function loadUsers(page){
   if(page!==undefined)_usersPage=Math.max(1,page);
   const b=g('ub');if(!b)return;
   const search=(g('users-search')?.value||'').trim();
+  if(_usersAbort){try{_usersAbort.abort();}catch(e){}}
+  _usersAbort=new AbortController();
   b.innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--td);padding:16px">Loading...</td></tr>';
-  const r=await api('get_users',{page:_usersPage,limit:50,search});
-  const cnt=g('users-count');
-  if(!r.ok){b.innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--r);padding:16px">Failed to load users</td></tr>';renderUsersPager(0,1,1);if(cnt)cnt.textContent='';return;}
+  let r;
+  try{
+    const res=await fetch(A+'get_users',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':CSRF_TOKEN},body:JSON.stringify({page:_usersPage,limit:30,search}),signal:_usersAbort.signal});
+    r=await res.json();
+  }catch(e){if(e.name==='AbortError')return;b.innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--r);padding:16px">Failed to load users</td></tr>';return;}
+  _usersLoaded=true;
+  const cnt=g('users-count');const limit=r.limit||30;
+  if(!r.ok){b.innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--r);padding:16px">Failed to load users</td></tr>';renderUsersPager(0,1,1,limit);if(cnt)cnt.textContent='';return;}
   const total=r.total||0;
   if(cnt)cnt.textContent=total?`(${total})`:'';
-  if(!r.data?.length){b.innerHTML=`<tr><td colspan="6" style="text-align:center;color:var(--td);padding:16px">${search?'No users match search':'No users yet'}</td></tr>`;renderUsersPager(total,r.page||1,r.pages||1);return;}
-  b.innerHTML=r.data.map(u=>{
-    const id=usersEsc(u.id);
-    const name=usersEsc(u.name||'?');
-    const key=usersEsc(u.key||'—');
+  if(!r.data?.length){b.innerHTML=`<tr><td colspan="6" style="text-align:center;color:var(--td);padding:16px">${search?'No users match search':'No users yet'}</td></tr>`;renderUsersPager(total,r.page||1,r.pages||1,limit);return;}
+  const rows=r.data.map(u=>{
+    const id=usersEsc(u.id);const name=usersEsc(u.name||'?');const key=usersEsc(u.key||'—');
     const left=u.searchesLeft==999999?'∞':(u.searchesLeft||0);
     const banBtn=u.banned?`<button class="btn bsu bsm" onclick="api('unban_user',{uid:'${id}'}).then(()=>loadUsers(_usersPage))">Unban</button>`:`<button class="btn bd bsm" onclick="api('ban_user',{uid:'${id}'}).then(()=>loadUsers(_usersPage))">Ban</button>`;
     return `<tr><td><b>${name}</b>${u.username?`<div style="font-size:10px;color:var(--td)">@${usersEsc(u.username)}</div>`:''}</td><td style="font-size:11px;color:var(--td)">${id}</td><td style="color:var(--c)">${left}</td><td><code style="color:var(--c);font-size:11px">${key}</code></td><td><span class="badge ${u.banned?'bi':'ba'}">${u.banned?'BANNED':'Active'}</span></td><td>${banBtn} <button class="btn bg bsm" onclick="if(confirm('Delete?'))api('delete_user',{uid:'${id}'}).then(()=>loadUsers(_usersPage))">Del</button></td></tr>`;
   }).join('');
-  renderUsersPager(total,r.page||1,r.pages||1);
+  b.innerHTML=rows;
+  renderUsersPager(total,r.page||1,r.pages||1,limit);
 }
 async function loadUK(){const r=await api('get_ukeys');const b=g('ukb');b.innerHTML='';if(!r.data?.length){b.innerHTML='<tr><td colspan="5" style="text-align:center;color:var(--td);padding:12px">None</td></tr>';return;}r.data.forEach(k=>b.innerHTML+=`<tr><td style="color:var(--c);font-family:'Share Tech Mono';font-size:11px">${k.key}</td><td>${k.searches}</td><td style="font-size:11px">${k.expires||'Never'}</td><td><span class="badge ${k.status==='active'?'ba':'bi'}">${k.status}</span></td><td><button class="btn bd bsm" onclick="api('delete_ukey',{id:'${k.id}'}).then(loadUK)">Del</button></td></tr>`);}
 async function loadLK(){const r=await api('get_lkeys');const b=g('lkb');b.innerHTML='';if(!r.data?.length){b.innerHTML='<tr><td colspan="5" style="text-align:center;color:var(--td);padding:12px">None</td></tr>';return;}r.data.forEach(k=>b.innerHTML+=`<tr><td style="color:var(--c);font-family:'Share Tech Mono';font-size:11px">${k.key}</td><td><span class="badge bc">${k.tier||'STD'}</span></td><td>${k.searches}</td><td><span class="badge ${k.status==='active'?'ba':'bi'}">${k.status}</span></td><td><button class="btn bd bsm" onclick="api('delete_lkey',{id:'${k.id}'}).then(loadLK)">Del</button></td></tr>`);}
