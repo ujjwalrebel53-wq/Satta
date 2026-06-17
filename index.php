@@ -155,6 +155,7 @@ function runScheduledBroadcasts(){
         }
         if($changed){$db['settings']['scheduled_broadcasts']=$sched;saveDB($id,$db);}
     }
+    runScheduledFlows();
 }
 function verifyExtApiToken($token){
     if(!$token)return false;
@@ -1549,17 +1550,204 @@ function getBrowserSessFile($botId,$uid,$pgId){
 function saveBrowserSession($botId,$uid,$pgId,$d){file_put_contents(getBrowserSessFile($botId,$uid,$pgId),json_encode($d,JSON_UNESCAPED_UNICODE),LOCK_EX);}
 function loadBrowserSession($botId,$uid,$pgId){$f=getBrowserSessFile($botId,$uid,$pgId);return file_exists($f)?json_decode(file_get_contents($f),true):null;}
 function deleteBrowserSession($botId,$uid,$pgId){$f=getBrowserSessFile($botId,$uid,$pgId);if(file_exists($f))@unlink($f);}
-function buildBrowserScript(array $steps,array $vars,string $sessFile,string $resFile,int $from=0):string{
+
+function browserAv($tmpl,$vars){
+    $t=(string)$tmpl;
+    foreach($vars as $k=>$v)$t=str_replace('{'.$k.'}',(string)$v,$t);
+    $t=preg_replace_callback('/\{random:([^}]+)\}/',function($m)use($vars){
+        $pts=array_values(array_filter(array_map('trim',explode(',',(string)($vars[$m[1]]??'')))));
+        return $pts?($pts[array_rand($pts)]):'';
+    },$t);
+    return $t;
+}
+function browserCssToXPath($sel){
+    $sel=trim($sel);
+    if(str_starts_with($sel,'//')||str_starts_with($sel,'(//'))return $sel;
+    if(str_starts_with($sel,'#'))return "//*[@id='".substr($sel,1)."']";
+    if(str_starts_with($sel,'.'))return "//*[contains(concat(' ',normalize-space(@class),' '),' ".substr($sel,1)." ')]";
+    if(preg_match('/^[a-zA-Z][\w-]*$/',$sel))return '//*[local-name()="'.strtolower($sel).'"]';
+    return "//*[contains(@class,'".preg_replace('/[^a-zA-Z0-9_-]/','',$sel)."')]";
+}
+function browserHtmlQuery($html,$selector,$attr=null){
+    if($html==='')return'';
+    libxml_use_internal_errors(true);
+    $dom=new DOMDocument();
+    @$dom->loadHTML('<?xml encoding="utf-8" ?>'.$html,LIBXML_NOERROR|LIBXML_NOWARNING);
+    $xp=new DOMXPath($dom);
+    $xpath=browserCssToXPath($selector);
+    $nodes=$xp->query($xpath);
+    if(!$nodes||!$nodes->length)return'';
+    $node=$nodes->item(0);
+    if($attr){
+        $a=$node->attributes?$node->attributes->getNamedItem($attr):null;
+        return $a?$a->nodeValue:'';
+    }
+    return trim($node->textContent??'');
+}
+function runBrowserHttpEngine(array $steps,array $vars,string $sessFile,string $resFile,int $from=0){
+    $R=['steps'=>[],'status'=>'done','vars'=>[],'engine'=>'http'];
+    $V=$vars;$cookieJar=[];$lastBody='';$lastUrl='';
+    if($from>0&&file_exists($sessFile)){
+        $sd=json_decode(file_get_contents($sessFile),true);
+        if(is_array($sd)){$V=array_merge($V,$sd['vars']??[]);$cookieJar=$sd['cookies']??[];$lastUrl=$sd['url']??'';$lastBody=$sd['html']??'';}
+    }
+    $domSteps=['click','fill','double_click','right_click','hover','drag_drop','upload_file','iframe_switch','iframe_main','js_eval','type_slow','screenshot','ask_captcha'];
+    for($i=0;$i<count($steps);$i++){
+        if($i<$from)continue;
+        $st=$steps[$i];$t=$st['type']??'open';
+        try{
+            if(in_array($t,$domSteps,true))throw new Exception("Step '$t' needs Playwright/Node engine — switch engine from HTTP Lite");
+            if($t==='open'||$t==='http_get'||$t==='http_post'){
+                $method=$t==='http_post'?'POST':strtoupper($st['method']??'GET');
+                if($t==='open'&&!empty($st['method']))$method=strtoupper($st['method']);
+                $url=browserAv($st['value']??'',$V);
+                $body=browserAv($st['body']??'',$V);
+                $hdrs=browserAv($st['headers']??"User-Agent: Mozilla/5.0 (compatible; RebelBot/2.0)\nAccept: text/html,application/json",$V);
+                $ch=curl_init();
+                $hArr=[];foreach(explode("\n",$hdrs)as $h){$h=trim($h);if($h&&strpos($h,':')!==false)$hArr[]=$h;}
+                if($cookieJar)$hArr[]='Cookie: '.implode('; ',array_map(fn($k,$v)=>"$k=$v",array_keys($cookieJar),$cookieJar));
+                $o=[CURLOPT_URL=>$url,CURLOPT_RETURNTRANSFER=>true,CURLOPT_HEADER=>true,CURLOPT_FOLLOWLOCATION=>true,CURLOPT_MAXREDIRS=>8,CURLOPT_TIMEOUT=>max(10,(int)($st['timeout']??60)),CURLOPT_SSL_VERIFYPEER=>true,CURLOPT_SSL_VERIFYHOST=>2,CURLOPT_HTTPHEADER=>$hArr,CURLOPT_USERAGENT=>'Mozilla/5.0 (compatible; RebelBot/2.0)'];
+                if($method==='POST'){$o[CURLOPT_POST]=true;$o[CURLOPT_POSTFIELDS]=$body;}
+                elseif($method!=='GET'){$o[CURLOPT_CUSTOMREQUEST]=$method;$o[CURLOPT_POSTFIELDS]=$body;}
+                curl_setopt_array($ch,$o);
+                $raw=curl_exec($ch);$code=curl_getinfo($ch,CURLINFO_HTTP_CODE);$hsz=curl_getinfo($ch,CURLINFO_HEADER_SIZE);
+                $err=curl_error($ch);curl_close($ch);
+                if($err)throw new Exception($err);
+                $hdr=substr($raw,0,$hsz);$lastBody=substr($raw,$hsz);$lastUrl=$url;
+                if(preg_match_all('/^Set-Cookie:\s*([^;=\s]+)=([^;\r\n]*)/mi',$hdr,$m,PREG_SET_ORDER))foreach($m as $c)$cookieJar[$c[1]]=$c[2];
+                $R['steps'][]=['i'=>$i,'type'=>$t,'status'=>'ok','code'=>$code,'engine'=>'http'];
+            }elseif($t==='wait'){sleep(max(0,(int)browserAv($st['value']??'1',$V)));}
+            elseif($t==='set_var'){$V[$st['var_name']??'v']=browserAv($st['value']??'',$V);}
+            elseif($t==='random_var'){
+                $pts=array_values(array_filter(array_map('trim',explode(',',browserAv($st['value']??'',$V)))));
+                $V[$st['var_name']??'v']=$pts?($pts[array_rand($pts)]):'';
+            }elseif($t==='get_text'){
+                $txt=browserHtmlQuery($lastBody,browserAv($st['selector']??'',$V));
+                $V[$st['var_name']??'result']=$txt;$R['steps'][]=['i'=>$i,'type'=>$t,'status'=>'ok','value'=>$txt,'engine'=>'http'];continue;
+            }elseif($t==='get_attr'){
+                $val=browserHtmlQuery($lastBody,browserAv($st['selector']??'',$V),browserAv($st['attribute']??'href',$V));
+                $V[$st['var_name']??'result']=$val;$R['steps'][]=['i'=>$i,'type'=>$t,'status'=>'ok','value'=>$val,'engine'=>'http'];continue;
+            }elseif($t==='regex_extract'){
+                $pat=browserAv($st['value']??'',$V);$vn=$st['var_name']??'result';
+                $val='';if($pat&&preg_match($pat,$lastBody,$m))$val=$m[1]??($m[0]??'');
+                $V[$vn]=$val;$R['steps'][]=['i'=>$i,'type'=>$t,'status'=>'ok','value'=>$val,'engine'=>'http'];continue;
+            }elseif($t==='json_extract'){
+                $path=browserAv($st['value']??'',$V);$vn=$st['var_name']??'result';
+                $dec=json_decode($lastBody,true);$val=$dec!==null?jsonPath($dec,$path):'';
+                $V[$vn]=(string)($val??'');$R['steps'][]=['i'=>$i,'type'=>$t,'status'=>'ok','value'=>$V[$vn],'engine'=>'http'];continue;
+            }elseif($t==='cookie_set'){$cookieJar[browserAv($st['name']??'',$V)]=browserAv($st['value']??'',$V);}
+            elseif($t==='cookie_get'){
+                $name=browserAv($st['name']??'',$V);$V[$st['var_name']??'cookie_val']=$cookieJar[$name]??'';
+                $R['steps'][]=['i'=>$i,'type'=>$t,'status'=>'ok','value'=>$V[$st['var_name']??'cookie_val'],'engine'=>'http'];continue;
+            }elseif($t==='assert_text'){
+                $expected=browserAv($st['value']??'',$V);$actual=browserHtmlQuery($lastBody,browserAv($st['selector']??'body',$V));
+                if(stripos($actual,$expected)===false)throw new Exception('Assert failed');
+            }elseif($t==='wait_url'){
+                $frag=browserAv($st['value']??'',$V);if($frag&&stripos($lastUrl,$frag)===false)throw new Exception('URL wait failed: '.$frag);
+            }else{throw new Exception('Unknown HTTP step: '.$t);}
+            $R['steps'][]=['i'=>$i,'type'=>$t,'status'=>'ok','engine'=>'http'];
+        }catch(Throwable $e){
+            $R['steps'][]=['i'=>$i,'type'=>$t,'status'=>'error','error'=>$e->getMessage(),'engine'=>'http'];
+            if(!empty($st['stop_on_error'])){$R['status']='error';break;}
+        }
+    }
+    $R['vars']=$V;
+    file_put_contents($resFile,json_encode($R,JSON_UNESCAPED_UNICODE),LOCK_EX);
+}
+function getBrowserEngineMode($engine){
+    $e=strtolower(trim($engine?:'playwright'));
+    if(in_array($e,['legacy','auto','selenium'],true))return'playwright_selenium';
+    return'playwright_only';
+}
+function runBrowserEngine(array $steps,array $vars,string $sessFile,string $resFile,int $from=0,string $engine='playwright',int $timeout=120){
+    $e=strtolower(trim($engine?:'playwright'));
+    if(in_array($e,['http','http_lite','curl'],true)){runBrowserHttpEngine($steps,$vars,$sessFile,$resFile,$from);return $e;}
+    if(in_array($e,['node','node_pw','nodejs'],true)){
+        $cfgFile=dirname($resFile).'/brcfg_'.basename($resFile,'.json').'.json';
+        file_put_contents($cfgFile,json_encode(['steps'=>$steps,'vars'=>$vars,'sessFile'=>$sessFile,'resFile'=>$resFile,'from'=>$from],JSON_UNESCAPED_UNICODE),LOCK_EX);
+        $runner=__DIR__.'/browser_runner.js';
+        if(!file_exists($runner)){file_put_contents($resFile,json_encode(['status'=>'error','error'=>'browser_runner.js missing','steps'=>[]]));return $e;}
+        $cwd=escapeshellarg(__DIR__);
+        exec('cd '.$cwd.' && timeout '.escapeshellarg($timeout).' node '.escapeshellarg($runner).' '.escapeshellarg($cfgFile).' 2>/dev/null');
+        @unlink($cfgFile);
+        return $e;
+    }
+    $mode=getBrowserEngineMode($e);
+    $scrFile=dirname($resFile).'/brs_'.basename($resFile,'.json').'.py';
+    file_put_contents($scrFile,buildBrowserScript($steps,$vars,$sessFile,$resFile,$from,$mode));
+    exec('timeout '.escapeshellarg($timeout).' python3 '.escapeshellarg($scrFile).' 2>/dev/null');
+    @unlink($scrFile);
+    return in_array($e,['legacy','auto','selenium'],true)?'python_legacy':($mode==='playwright_only'?'python_playwright':'python_selenium');
+}
+function getAutomationStatus(){
+    $s=['http'=>true,'node_playwright'=>false,'python_playwright'=>false,'python_selenium'=>false,'chromium'=>false];
+    if(file_exists(__DIR__.'/node_modules/playwright/package.json'))$s['node_playwright']=true;
+    exec('python3 -c "import playwright" 2>/dev/null',$o,$c);if($c===0)$s['python_playwright']=true;
+    exec('python3 -c "import selenium" 2>/dev/null',$o2,$c2);if($c2===0)$s['python_selenium']=true;
+    exec('which chromium 2>/dev/null || which google-chrome 2>/dev/null || which chromium-browser 2>/dev/null',$o3,$c3);
+    $s['chromium']=($c3===0&&!empty($o3));
+    return $s;
+}
+function automationDefaults(){return['event_triggers'=>[],'scheduled_flows'=>[]];}
+function getAutomation(&$db){
+    $def=automationDefaults();
+    if(!isset($db['settings']['automation']))$db['settings']['automation']=$def;
+    else $db['settings']['automation']=array_replace_recursive($def,$db['settings']['automation']);
+    return $db['settings']['automation'];
+}
+function runScheduledFlows(){
+    foreach(loadBots() as $b){
+        $id=$b['id'];$tok=trim($b['token']??'');if(!$tok)continue;
+        $db=loadDB($id);$auto=getAutomation($db);$jobs=$auto['scheduled_flows']??[];$changed=false;
+        foreach($jobs as $ji=>&$job){
+            if(empty($job['enabled']))continue;
+            $runAt=strtotime($job['run_at']??'');if(!$runAt||$runAt>time())continue;
+            $targets=getBroadcastTargets($db,$job['segment']??'all');
+            $pageId=$job['page_id']??'';$pg=findPageById($db,$pageId);
+            if($pg){
+                $sent=0;
+                foreach($targets as $tuid){
+                    if(!isset($db['users'][$tuid]))$db['users'][$tuid]=['id'=>$tuid,'name'=>'User','username'=>'','searchesLeft'=>999,'searches'=>0,'joined'=>date('Y-m-d H:i:s'),'banned'=>false,'key'=>'','active_page'=>''];
+                    $u=&$db['users'][$tuid];$s=$db['settings'];
+                    runMatchedPage($id,$tuid,null,$u,$db,$s,$job['query']??'',$pg,$tok);
+                    $sent++;usleep(80000);
+                }
+                addLog($id,"Scheduled flow {$pageId}: {$sent} users",'info');
+            }
+            if(($job['repeat']??'')==='daily')$jobs[$ji]['run_at']=date('Y-m-d H:i:s',$runAt+86400);
+            else $jobs[$ji]['enabled']=false;
+            $changed=true;
+        }
+        if($changed){$db['settings']['automation']['scheduled_flows']=$jobs;saveDB($id,$db);}
+    }
+}
+function fireAutomationEvent($botId,&$db,$s,$event,$uid,$chatId,$token,$payload=[]){
+    $auto=getAutomation($db);
+    foreach($auto['event_triggers']??[] as $tr){
+        if(empty($tr['enabled'])||($tr['event']??'')!==$event)continue;
+        $pg=findPageById($db,$tr['page_id']??'');if(!$pg)continue;
+        if(!isset($db['users'][$uid]))continue;
+        $u=&$db['users'][$uid];
+        $q=$payload['query']??'';
+        runMatchedPage($botId,$chatId,null,$u,$db,$s,$q,$pg,$token);
+        addLog($botId,"Event[$event]→flow {$pg['id']}",'info');
+        if(!empty($tr['once_per_user'])){$u['auto_evt_'.($tr['id']??$event)]=date('c');}
+    }
+}
+
+function buildBrowserScript(array $steps,array $vars,string $sessFile,string $resFile,int $from=0,string $engineMode='playwright_only'):string{
     $stJ=json_encode($steps,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
     $vJ =json_encode($vars, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
     $sf =addslashes($sessFile);
     $rf =addslashes($resFile);
+    $em =addslashes($engineMode);
     return <<<PY
 import sys,json,os,base64,time,random,re,tempfile
 SF='{$sf}'; RF='{$rf}'
-R={'steps':[],'status':'done','vars':{}}
+R={'steps':[],'status':'done','vars':{},'engine':'python_playwright'}
 V={$vJ}
 FROM={$from}
+_ENGINE_MODE='{$em}'
 if os.path.exists(SF):
     try: V.update(json.load(open(SF)).get('vars',{}))
     except: pass
@@ -1586,6 +1774,9 @@ if PW:
             ok=True;B=_b;break
         except: pass
     if not ok: PW=False
+if not PW and _ENGINE_MODE=='playwright_only':
+    R['status']='error';R['error']='Playwright Python missing. Install: pip install playwright && playwright install chromium — OR use Node/HTTP engine in Automation panel.'
+    open(RF,'w').write(json.dumps(R));sys.exit(1)
 if not PW:
     try:
         from selenium import webdriver
@@ -1875,17 +2066,13 @@ function execBrowser($botId,$chatId,$msgId,$u,&$db,$s,$query,$p,$token,$extraVar
         foreach($sess['vars']??[] as $k=>$v)if(!isset($vars[$k]))$vars[$k]=$v;
     }
     $steps=$p['browser_steps']??[];
-    $script=buildBrowserScript($steps,$vars,$sessFile,$resFile,$from);
-    $scrFile=getBotDir($botId).'brs_'.preg_replace('/\W/','_',$uid).'_'.preg_replace('/\W/','_',$pgId).'.py';
-    file_put_contents($scrFile,$script);
-
-    $lmsg='⏳ <b>Browser running...</b>';
+    $engine=$p['browser_engine']??'playwright';
+    $timeout=max(30,(int)($p['browser_timeout']??$p['api_timeout']??120));
+    $lmsg='⏳ <b>Automation running...</b> <i>('.htmlspecialchars($engine,ENT_QUOTES,'UTF-8').')</i>';
     if(!empty(trim($p['msg_loading']??'')))$lmsg=pvNoStamp($p['msg_loading'],$u,$s,$query,$p['custom_vars']??'',$db);
     $lr=tg('sendMessage',['chat_id'=>$chatId,'text'=>$lmsg,'parse_mode'=>'HTML'],$token);
     $lmid=$lr['result']['message_id']??null;
-    $timeout=max(30,(int)($p['api_timeout']??120));
-    exec('timeout '.escapeshellarg($timeout).' python3 '.escapeshellarg($scrFile).' 2>/dev/null');
-    @unlink($scrFile);
+    $usedEngine=runBrowserEngine($steps,$vars,$sessFile,$resFile,$from,$engine,$timeout);
     $res=file_exists($resFile)?json_decode(file_get_contents($resFile),true):null;
     if($lmid)tg('deleteMessage',['chat_id'=>$chatId,'message_id'=>$lmid],$token);
     if(!$res){
@@ -1939,7 +2126,7 @@ function execBrowser($botId,$chatId,$msgId,$u,&$db,$s,$query,$p,$token,$extraVar
     }
     $st=$res['status']??'done';
     addLog($botId,"Browser ".strtoupper($st)." [{$pgId}]: $query",$st==='done'?'success':'warn');
-    saveBrowserDebug($botId,$uid,$pgId,$res??[]);
+    saveBrowserDebug($botId,$uid,$pgId,array_merge($res??[],['engine_used'=>$usedEngine??$engine]));
     bumpAnalytics($botId,'browser',$pgId);
     deleteBrowserSession($botId,$uid,$pgId);
     @unlink($resFile);
@@ -2208,13 +2395,9 @@ function execLinkAutomationBrowser($botId,$chatId,$u,&$db,$s,$msgText,$rule,$tok
         foreach($sess['vars']??[] as $k=>$v)if(!isset($vars[$k]))$vars[$k]=$v;
     }
 
-    $script=buildBrowserScript($steps,$vars,$sessFile,$resFile,$from);
-    $scrFile=getBotDir($botId).'lacsc_'.preg_replace('/\W/','_',$uid).'_'.preg_replace('/\W/','_',$ruleId).'.py';
-    file_put_contents($scrFile,$script);
-
-    $timeout=max(30,min(300,(int)($rule['timeout']??60)));
-    exec('timeout '.escapeshellarg($timeout).' python3 '.escapeshellarg($scrFile).' 2>/dev/null');
-    @unlink($scrFile);
+    $engine=$rule['browser_engine']??'playwright';
+    $timeout=max(30,min(300,(int)($rule['browser_timeout']??$rule['timeout']??60)));
+    runBrowserEngine($steps,$vars,$sessFile,$resFile,$from,$engine,$timeout);
 
     $res=file_exists($resFile)?json_decode(file_get_contents($resFile),true):null;
     if(!$res){
@@ -2843,6 +3026,8 @@ if(isset($_GET['webhook_bot'])){
             $db['users'][$uid]=['id'=>$uid,'name'=>$name,'username'=>$uname,'searches'=>0,
                 'searchesLeft'=>$botFree,'joined'=>date('Y-m-d H:i:s'),'banned'=>false,'key'=>'','active_page'=>''];
             addLog($botId,"New User: $name ($uid)",'success');
+            saveDB($botId,$db);
+            if(!$isGroup)fireAutomationEvent($botId,$db,$s,'new_user',$uid,$chatId,$token,['query'=>$msgText]);
         }
         dynVarSet($db,'users_ids',$uid,'append_unique');
         if($isGroup){
@@ -4804,7 +4989,7 @@ if($page==='api'){
             saveDB($actId,$db);jout(['ok'=>true]);break;
         case 'save_page':
             if(!$actId)jout(['ok'=>false,'error'=>'No Bot']);
-            $np=['id'=>strtolower(preg_replace('/[^a-zA-Z0-9_]/','_',$body['id']?:uniqid('pg_'))),'trigger'=>strtolower(preg_replace('/[^a-zA-Z0-9_]/','_',$body['trigger']??'')),'type'=>$body['type']??'text','is_free_text'=>(bool)($body['is_free_text']??false),'ft_chat_mode'=>$body['ft_chat_mode']??'both','ft_mention_only'=>(bool)($body['ft_mention_only']??false),'ft_access_control'=>$body['ft_access_control']??'','force_join'=>(bool)($body['force_join']??false),'access_control'=>$body['access_control']??'','fallback_page'=>$body['fallback_page']??'','requires_credit'=>(bool)($body['requires_credit']??false),'media_main'=>$body['media_main']??'','media_missing'=>$body['media_missing']??'','media_error'=>$body['media_error']??'','document_url'=>$body['document_url']??'','custom_vars'=>$body['custom_vars']??'','text'=>$body['text']??'','api_url'=>$body['api_url']??'','json_root'=>$body['json_root']??'','not_found'=>$body['not_found']??'','msg_missing'=>$body['msg_missing']??'','msg_loading'=>$body['msg_loading']??'','loading_steps'=>$body['loading_steps']??[],'api_timeout'=>(int)($body['api_timeout']??15),'api_retry'=>(bool)($body['api_retry']??false),'buttons'=>$body['buttons']??[],'curl_url'=>$body['curl_url']??'','curl_method'=>$body['curl_method']??'POST','curl_headers'=>$body['curl_headers']??'','curl_body'=>$body['curl_body']??'','curl_response_path'=>$body['curl_response_path']??'','curl_timeout'=>(int)($body['curl_timeout']??120),'browser_var_names'=>$body['browser_var_names']??'','browser_done_msg'=>$body['browser_done_msg']??'✅ Done!','browser_steps'=>$body['browser_steps']??[],'sticker_id'=>$body['sticker_id']??'','flow_rules'=>$body['flow_rules']??[],'subflow_before'=>$body['subflow_before']??'','subflow_after'=>$body['subflow_after']??'','include_page'=>$body['include_page']??'','rate_limit_max'=>(int)($body['rate_limit_max']??0),'rate_limit_msg'=>$body['rate_limit_msg']??'⏳ Too many requests. Try again later.','webhook_enabled'=>(bool)($body['webhook_enabled']??false),'webhook_key'=>$body['webhook_key']??'','flow_canvas'=>$body['flow_canvas']??null,'wizard_steps'=>$body['wizard_steps']??[],'wizard_final'=>$body['wizard_final']??'','flow_desc'=>$body['flow_desc']??''];
+            $np=['id'=>strtolower(preg_replace('/[^a-zA-Z0-9_]/','_',$body['id']?:uniqid('pg_'))),'trigger'=>strtolower(preg_replace('/[^a-zA-Z0-9_]/','_',$body['trigger']??'')),'type'=>$body['type']??'text','is_free_text'=>(bool)($body['is_free_text']??false),'ft_chat_mode'=>$body['ft_chat_mode']??'both','ft_mention_only'=>(bool)($body['ft_mention_only']??false),'ft_access_control'=>$body['ft_access_control']??'','force_join'=>(bool)($body['force_join']??false),'access_control'=>$body['access_control']??'','fallback_page'=>$body['fallback_page']??'','requires_credit'=>(bool)($body['requires_credit']??false),'media_main'=>$body['media_main']??'','media_missing'=>$body['media_missing']??'','media_error'=>$body['media_error']??'','document_url'=>$body['document_url']??'','custom_vars'=>$body['custom_vars']??'','text'=>$body['text']??'','api_url'=>$body['api_url']??'','json_root'=>$body['json_root']??'','not_found'=>$body['not_found']??'','msg_missing'=>$body['msg_missing']??'','msg_loading'=>$body['msg_loading']??'','loading_steps'=>$body['loading_steps']??[],'api_timeout'=>(int)($body['api_timeout']??15),'api_retry'=>(bool)($body['api_retry']??false),'buttons'=>$body['buttons']??[],'curl_url'=>$body['curl_url']??'','curl_method'=>$body['curl_method']??'POST','curl_headers'=>$body['curl_headers']??'','curl_body'=>$body['curl_body']??'','curl_response_path'=>$body['curl_response_path']??'','curl_timeout'=>(int)($body['curl_timeout']??120),'browser_var_names'=>$body['browser_var_names']??'','browser_done_msg'=>$body['browser_done_msg']??'✅ Done!','browser_steps'=>$body['browser_steps']??[],'browser_engine'=>$body['browser_engine']??'playwright','browser_timeout'=>(int)($body['browser_timeout']??120),'sticker_id'=>$body['sticker_id']??'','flow_rules'=>$body['flow_rules']??[],'subflow_before'=>$body['subflow_before']??'','subflow_after'=>$body['subflow_after']??'','include_page'=>$body['include_page']??'','rate_limit_max'=>(int)($body['rate_limit_max']??0),'rate_limit_msg'=>$body['rate_limit_msg']??'⏳ Too many requests. Try again later.','webhook_enabled'=>(bool)($body['webhook_enabled']??false),'webhook_key'=>$body['webhook_key']??'','flow_canvas'=>$body['flow_canvas']??null,'wizard_steps'=>$body['wizard_steps']??[],'wizard_final'=>$body['wizard_final']??'','flow_desc'=>$body['flow_desc']??''];
             if(!$np['id'])jout(['ok'=>false,'error'=>'ID required']);
             $f=false;foreach(($db['pages']??[]) as $ki=>$kv){if($kv['id']==$np['id']){
                 if(!empty($np['webhook_enabled'])&&empty($np['webhook_key']))$np['webhook_key']=$kv['webhook_key']??bin2hex(random_bytes(12));
@@ -5635,6 +5820,32 @@ if($page==='api'){
         case 'run_cron_now':
             runScheduledBroadcasts();jout(['ok'=>true]);break;
 
+        case 'get_automation_status':
+            jout(['ok'=>true,'engines'=>getAutomationStatus()]);break;
+
+        case 'get_automation_settings':
+            if(!$actId)jout(['ok'=>false,'error'=>'No bot']);
+            getAutomation($db);
+            jout(['ok'=>true,'data'=>$db['settings']['automation'],'pages'=>array_map(fn($p)=>['id'=>$p['id']??'','trigger'=>$p['trigger']??'','type'=>$p['type']??'text'],$db['pages']??[])]);break;
+
+        case 'save_automation_settings':
+            if(!$actId)jout(['ok'=>false,'error'=>'No bot']);
+            $in=$body['automation']??[];
+            if(!is_array($in))jout(['ok'=>false,'error'=>'Invalid']);
+            $db['settings']['automation']=array_replace_recursive(getAutomation($db),$in);
+            saveDB($actId,$db);auditLog('save_automation',$actId,'info');jout(['ok'=>true]);break;
+
+        case 'test_browser_steps':
+            if(!$actId)jout(['ok'=>false,'error'=>'No bot']);
+            $steps=$body['browser_steps']??[];$engine=$body['browser_engine']??'playwright';
+            $vars=['query'=>$body['query']??'test','tg_name'=>'TestUser','var1'=>'demo'];
+            $resFile=getBotDir($actId).'brt_'.uniqid().'.json';
+            $sessFile=getBotDir($actId).'brts_'.uniqid().'.json';
+            $eng=runBrowserEngine($steps,$vars,$sessFile,$resFile,0,$engine,max(30,(int)($body['browser_timeout']??60)));
+            $res=file_exists($resFile)?json_decode(file_get_contents($resFile),true):null;
+            @unlink($resFile);@unlink($sessFile);
+            jout(['ok'=>true,'engine'=>$eng,'result'=>$res]);break;
+
         default:jout(['ok'=>false,'error'=>'Unknown action']);
     }
 }
@@ -5647,7 +5858,7 @@ RENDER:
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="color-scheme" content="dark"><meta name="theme-color" content="#030712">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<title>REBEL ADMIN v9 — Premium</title>
+<title>REBEL ADMIN v10 — Automation Pro</title>
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@400;500;600&family=Share+Tech+Mono&display=swap" rel="stylesheet">
 
 <style>
@@ -5989,6 +6200,7 @@ body.theme-amoled{--bg:#000;--s:#050505;--s2:#0a0a0a;--s3:#111;}
       <button type="button" class="nav-grp-h" onclick="toggleNavGrp(this)">Automation <span>▼</span></button>
       <div class="nav-grp-body">
         <button class="ni" data-nav="builder" onclick="nav('builder',this)">🚀 Flow Builder <span style="font-size:9px;color:var(--p);margin-left:auto">Pro</span></button>
+        <button class="ni ni-prem" data-nav="automation" onclick="nav('automation',this)">⚡ Automation Pro</button>
         <button class="ni" data-nav="fj" onclick="nav('fj',this)">🔒 Force Join</button>
         <button class="ni" data-nav="welcome" onclick="nav('welcome',this)">👋 Welcome Message</button>
         <button class="ni" data-nav="tagger" onclick="nav('tagger',this)">📣 User Tagger</button>
@@ -6136,6 +6348,42 @@ body.theme-amoled{--bg:#000;--s:#050505;--s2:#0a0a0a;--s3:#111;}
       <div id="sec-tokens"></div><div id="sec-cron" style="margin-top:10px;font-size:10px;color:var(--td);font-family:'Share Tech Mono'"></div>
     </div>
     <div class="card"><div class="sh"><div class="st">📋 ADMIN AUDIT LOG</div><button class="btn bg bsm" onclick="loadAuditLog()">🔄</button></div><div class="log-t" id="sec-audit" style="max-height:300px">Loading...</div></div>
+  </div>
+
+  <!-- AUTOMATION PRO -->
+  <div class="panel" id="p-automation">
+    <div class="dash-hero" style="margin-bottom:14px">
+      <div>
+        <h2>⚡ Automation Pro</h2>
+        <p>Multi-engine browser automation — <b>HTTP Lite</b> (no browser), <b>Node Playwright</b>, <b>Python Playwright</b> — Selenium optional legacy only. Plus event triggers &amp; scheduled flows.</p>
+      </div>
+      <button type="button" class="btn bp" onclick="saveAutomationAll()">💾 Save Automation</button>
+    </div>
+    <div class="card" style="border-color:rgba(0,245,255,.35)">
+      <div class="sh"><div class="st" style="color:var(--c)">🔧 ENGINE STATUS</div><button class="btn bg bsm" onclick="loadAutomation()">🔄</button></div>
+      <div id="auto-engines" class="fg mb"></div>
+      <p style="font-size:11px;color:var(--td);line-height:1.7">Recommended: <b style="color:var(--g)">HTTP Lite</b> for API/scrape · <b style="color:var(--c)">Node Playwright</b> for full DOM · <b style="color:var(--y)">Python Playwright</b> if Node unavailable</p>
+    </div>
+    <div class="card">
+      <div class="sh"><div class="st">🧪 TEST BROWSER STEPS</div></div>
+      <div class="fg mb">
+        <div class="fgrp"><label class="fl">Engine</label><select id="auto-test-eng" class="fsel"><option value="http">HTTP Lite (no Selenium)</option><option value="node">Node Playwright</option><option value="playwright">Python Playwright</option><option value="legacy">Legacy (Selenium fallback)</option></select></div>
+        <div class="fgrp"><label class="fl">Test Query</label><input type="text" id="auto-test-q" class="fi" value="test"></div>
+        <div class="fgrp" style="justify-content:flex-end"><label class="fl">&nbsp;</label><button class="btn bsu" onclick="testBrowserFromPanel()">▶ Run Test</button></div>
+      </div>
+      <p style="font-size:10px;color:var(--td);margin-bottom:8px">Uses steps from currently open Flow page — or add test steps below in Flow Builder first.</p>
+      <div class="log-t" id="auto-test-out" style="max-height:200px">Run test to see output...</div>
+    </div>
+    <div class="card" style="border-color:rgba(191,90,242,.35)">
+      <div class="sh"><div class="st" style="color:var(--p)">⚡ EVENT TRIGGERS</div><button class="btn bsu bsm" onclick="autoAddEvent()">+ Trigger</button></div>
+      <p style="font-size:11px;color:var(--td);margin-bottom:10px">Auto-run a flow when event happens (new user join, etc.)</p>
+      <div id="auto-events"></div>
+    </div>
+    <div class="card" style="border-color:rgba(57,255,20,.35)">
+      <div class="sh"><div class="st" style="color:var(--g)">⏰ SCHEDULED FLOWS</div><button class="btn bsu bsm" onclick="autoAddSched()">+ Schedule</button></div>
+      <p style="font-size:11px;color:var(--td);margin-bottom:10px">Cron har minute — segment ko specific flow chalao (broadcast se alag)</p>
+      <div id="auto-sched"></div>
+    </div>
   </div>
 
   <!-- TOOLS -->
@@ -7817,10 +8065,33 @@ body.theme-amoled{--bg:#000;--s:#050505;--s2:#0a0a0a;--s3:#111;}
 
     <div style="background:rgba(57,255,20,.06);border:1px solid rgba(57,255,20,.3);border-radius:10px;padding:14px;margin-bottom:12px">
 
-      <div style="color:var(--g);font-family:'Orbitron';font-size:11px;margin-bottom:10px">🌐 BROWSER AUTOMATION — Selenium / Playwright</div>
+      <div style="color:var(--g);font-family:'Orbitron';font-size:11px;margin-bottom:10px">🌐 BROWSER AUTOMATION PRO — Multi-Engine</div>
 
-      <div style="font-size:11px;color:var(--td);margin-bottom:10px;line-height:1.8">Auto-detects: Playwright → Selenium. Browser: Chrome → Chromium.<br>
-      Variables from command args: <code style="color:var(--c)">{var1}</code> <code style="color:var(--c)">{var2}</code> etc. Or use named vars below.</div>
+      <div style="font-size:11px;color:var(--td);margin-bottom:10px;line-height:1.8">
+        <b style="color:var(--c)">HTTP Lite</b> — bina browser/Selenium, sirf curl + HTML parse (fast)<br>
+        <b style="color:var(--g)">Node Playwright</b> — full DOM, npm playwright (recommended)<br>
+        <b style="color:var(--y)">Python Playwright</b> — full DOM, pip playwright<br>
+        <span style="color:var(--tf)">Legacy</span> — Selenium fallback (optional only)
+      </div>
+
+      <div class="fg mb">
+        <div class="fgrp">
+          <label class="fl">Automation Engine</label>
+          <select id="pb-browser-engine" class="fsel" onchange="onBrowserEngineChange()">
+            <option value="http">🚀 HTTP Lite — no Selenium</option>
+            <option value="node">🌐 Node Playwright</option>
+            <option value="playwright" selected>🐍 Python Playwright</option>
+            <option value="legacy">⚙️ Legacy (Selenium fallback)</option>
+          </select>
+        </div>
+        <div class="fgrp">
+          <label class="fl">Timeout (seconds)</label>
+          <input type="number" id="pb-browser-timeout" class="fi" value="120" min="30" max="600">
+        </div>
+      </div>
+      <div id="pb-engine-hint" style="font-size:10px;color:var(--y);margin-bottom:10px;font-family:'Share Tech Mono'"></div>
+
+      <div style="font-size:11px;color:var(--td);margin-bottom:10px;line-height:1.8">Variables from command args: <code style="color:var(--c)">{var1}</code> <code style="color:var(--c)">{var2}</code> etc.</div>
 
       <div class="fg mb">
 
@@ -7846,6 +8117,7 @@ body.theme-amoled{--bg:#000;--s:#050505;--s2:#0a0a0a;--s3:#111;}
           <button class="btn bsm" style="background:rgba(57,255,20,.1);border:1px solid rgba(57,255,20,.3);font-size:10px" onclick="addAutomationTemplate('form')">📋 Form Fill</button>
           <button class="btn bsm" style="background:rgba(191,90,242,.1);border:1px solid rgba(191,90,242,.3);font-size:10px" onclick="addAutomationTemplate('scrape')">📊 Data Scrape</button>
           <button class="btn bsm" style="background:rgba(255,159,10,.1);border:1px solid rgba(255,159,10,.3);font-size:10px" onclick="addAutomationTemplate('signup')">📝 Sign Up</button>
+          <button class="btn bsm" style="background:rgba(0,245,255,.15);border:1px solid rgba(0,245,255,.4);font-size:10px" onclick="addAutomationTemplate('http_scrape')">🚀 HTTP Scrape (no browser)</button>
         </div>
       </div>
       <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:8px">
@@ -7878,6 +8150,9 @@ body.theme-amoled{--bg:#000;--s:#050505;--s2:#0a0a0a;--s3:#111;}
         <button class="btn bg bsm" onclick="addBrowserStep({type:'reload'})">🔄 Reload</button>
         <button class="btn bg bsm" onclick="addBrowserStep({type:'set_var'})">📦 Set Var</button>
         <button class="btn bg bsm" onclick="addBrowserStep({type:'random_var'})">🎲 Random Var</button>
+        <button class="btn bg bsm" onclick="addBrowserStep({type:'json_extract'})">📦 JSON Extract</button>
+        <button class="btn bg bsm" onclick="addBrowserStep({type:'regex_extract'})">🔎 Regex Extract</button>
+        <button class="btn bg bsm" onclick="addBrowserStep({type:'http_post'})">📤 HTTP POST</button>
         <button class="btn bg bsm" onclick="addBrowserStep({type:'raw'})">⚡ Raw Python</button>
       </div>
     </div>
@@ -8619,7 +8894,7 @@ function setActiveBotName(name){
   if(g('abN'))g('abN').textContent=name;
   if(g('topBotName'))g('topBotName').textContent=name;
 }
-const NAV_LABELS={dash:'Dashboard',analytics:'Analytics',security:'Security Pro',tools:'Tools & Backup',bots:'Manage Bots',cfg:'Bot Config & Security',fj:'Force Join',welcome:'Welcome Message',tagger:'User Tagger',broadcast:'Broadcast',vault:'API Key Vault',bvars:'Bot Variables',dvars:'Live Variables',builder:'Flow Builder',users:'Users',ukeys:'User Keys',lkeys:'Licence Keys',keygen:'Key Gen',guide:'Full Guide',stickers:'Sticker Library',forwards:'Forward Library',premoji:'Premium Emoji',apkrenamer:'APK Renamer',rosebot:'The Rebel Bot',hiddeneye:'Hidden Eye Bot',promobot:'Promo Bot',linkautomation:'Link Automation',depositbot:'Deposit Bot',linkrunner:'Link Runner',adharbot:'Aadhaar Bot'};
+const NAV_LABELS={dash:'Dashboard',analytics:'Analytics',automation:'Automation Pro',security:'Security Pro',tools:'Tools & Backup',bots:'Manage Bots',cfg:'Bot Config & Security',fj:'Force Join',welcome:'Welcome Message',tagger:'User Tagger',broadcast:'Broadcast',vault:'API Key Vault',bvars:'Bot Variables',dvars:'Live Variables',builder:'Flow Builder',users:'Users',ukeys:'User Keys',lkeys:'Licence Keys',keygen:'Key Gen',guide:'Full Guide',stickers:'Sticker Library',forwards:'Forward Library',premoji:'Premium Emoji',apkrenamer:'APK Renamer',rosebot:'The Rebel Bot',hiddeneye:'Hidden Eye Bot',promobot:'Promo Bot',linkautomation:'Link Automation',depositbot:'Deposit Bot',linkrunner:'Link Runner',adharbot:'Aadhaar Bot'};
 const CMD_ITEMS=Object.entries(NAV_LABELS).map(([id,label])=>({id,label,icon:({dash:'📊',bots:'🤖',cfg:'⚙️',builder:'🚀',users:'👥',broadcast:'📣',rosebot:'🔥'}[id]||'▸')}));
 let cmdSel=0;
 function setBreadcrumb(id){const el=g('topCrumb');if(el)el.textContent=NAV_LABELS[id]||id;}
@@ -8691,7 +8966,7 @@ function nav(id,btn){
   panel.classList.add('active');if(btn)btn.classList.add('active');closeSb();
   setBreadcrumb(id);
   scrollPanelTop(id);
-  const m={dash:()=>{loadDash();checkBot();loadLogs();},analytics:loadAnalytics,security:loadSecurity,tools:loadTools,bots:loadBots,users:loadUsers,ukeys:loadUK,lkeys:loadLK,builder:loadPages,cfg:loadCfg,vault:loadVault,bvars:loadBV,dvars:loadDynVars,fj:loadFj,broadcast:()=>{dmLoadStickers();dmLoadEmojis();dmsLoadStickers();dmsLoadEmojis();loadSchedJobs();},guide:()=>{},stickers:refreshStickers,forwards:refreshForwards,welcome:loadWelcome,tagger:()=>{loadTagger();utLoadEmojiPicker();},hiddeneye:loadHiddenEye,apkrenamer:apkrLoad,promobot:promoLoad,rosebot:roseLoad,linkautomation:laLoad,depositbot:rbdInit,linkrunner:lrInit,adharbot:adharBotInit};
+  const m={dash:()=>{loadDash();checkBot();loadLogs();},analytics:loadAnalytics,automation:loadAutomation,security:loadSecurity,tools:loadTools,bots:loadBots,users:loadUsers,ukeys:loadUK,lkeys:loadLK,builder:loadPages,cfg:loadCfg,vault:loadVault,bvars:loadBV,dvars:loadDynVars,fj:loadFj,broadcast:()=>{dmLoadStickers();dmLoadEmojis();dmsLoadStickers();dmsLoadEmojis();loadSchedJobs();},guide:()=>{},stickers:refreshStickers,forwards:refreshForwards,welcome:loadWelcome,tagger:()=>{loadTagger();utLoadEmojiPicker();},hiddeneye:loadHiddenEye,apkrenamer:apkrLoad,promobot:promoLoad,rosebot:roseLoad,linkautomation:laLoad,depositbot:rbdInit,linkrunner:lrInit,adharbot:adharBotInit};
   const run=m[id];
   if(run){
     let ret;
@@ -9603,6 +9878,9 @@ function editPage(id){
   if(g('pb-docurl'))g('pb-docurl').value=c.document_url||'';
   if(g('pb-bv-names'))g('pb-bv-names').value=c.browser_var_names||'';
   if(g('pb-bv-done'))g('pb-bv-done').value=c.browser_done_msg||'✅ Done!';
+  if(g('pb-browser-engine'))g('pb-browser-engine').value=c.browser_engine||'playwright';
+  if(g('pb-browser-timeout'))g('pb-browser-timeout').value=c.browser_timeout||120;
+  onBrowserEngineChange();
   g('bsteps-c').innerHTML='';if(c.browser_steps)c.browser_steps.forEach(s=>addBrowserStep(s));
   if(g('pb-sticker-id'))g('pb-sticker-id').value=c.sticker_id||'';
   const isFt=c.is_free_text||false;
@@ -9674,6 +9952,8 @@ async function savePage(){
       document_url:g('pb-docurl')?.value||'',
       browser_var_names:g('pb-bv-names')?.value||'',
       browser_done_msg:g('pb-bv-done')?.value||'✅ Done!',
+      browser_engine:g('pb-browser-engine')?.value||'playwright',
+      browser_timeout:parseInt(g('pb-browser-timeout')?.value)||120,
       browser_steps:getBrowserSteps(),
       sticker_id:g('pb-sticker-id')?.value?.trim()||'',
       flow_rules:getFlowRules(),
@@ -10101,6 +10381,67 @@ function applyTheme(t){document.body.classList.remove('theme-light','theme-amole
 function cycleTheme(){const cur=localStorage.getItem('rebel_theme')||'dark';applyTheme(THEMES[(THEMES.indexOf(cur)+1)%THEMES.length]);}
 applyTheme(localStorage.getItem('rebel_theme')||'dark');
 
+// ═══ AUTOMATION PRO ═══
+let _autoData=null,_autoPages=[];
+async function loadAutomation(){
+  const[r,s]=await Promise.all([api('get_automation_settings'),api('get_automation_status')]);
+  if(r.ok){_autoData=r.data||{};_autoPages=r.pages||[];renderAutoEvents();renderAutoSched();}
+  const el=g('auto-engines');if(el&&s.ok){
+    const e=s.engines||{};
+    el.innerHTML=[['HTTP Lite (PHP curl)',e.http],['Node Playwright',e.node_playwright],['Python Playwright',e.python_playwright],['Selenium (legacy)',e.python_selenium],['Chromium binary',e.chromium]].map(([n,ok])=>`<div class="sc"><div class="sn" style="color:var(--${ok?'g':'r'});font-size:16px">${ok?'✓':'✗'}</div><div class="sl">${n}</div></div>`).join('');
+  }
+}
+function autoPageOpts(sel){return (_autoPages||[]).map(p=>`<option value="${p.id}"${p.id===sel?' selected':''}>/${p.trigger||p.id} · ${p.type}</option>`).join('');}
+function renderAutoEvents(){
+  const el=g('auto-events');if(!el)return;
+  const list=_autoData?.event_triggers||[];
+  if(!list.length){el.innerHTML='<div style="color:var(--td);font-size:12px">No event triggers</div>';return;}
+  el.innerHTML=list.map((ev,i)=>`<div class="prem-row" style="background:var(--s2);border:1px solid var(--b);border-radius:8px;padding:10px;margin-bottom:8px">
+    <div style="display:flex;justify-content:space-between;margin-bottom:8px"><strong>Event #${i+1}</strong><button class="btn bd bsm" onclick="autoDelEvent(${i})">✕</button></div>
+    <div class="fg"><div class="fgrp"><label class="fl">Event</label><select class="fsel auto-ev-type"><option value="new_user"${ev.event==='new_user'?' selected':''}>👤 New user joins</option><option value="key_redeem"${ev.event==='key_redeem'?' selected':''}>🔑 Key redeemed</option></select></div>
+    <div class="fgrp"><label class="fl">Run Flow</label><select class="fsel auto-ev-page">${autoPageOpts(ev.page_id)}</select></div>
+    <div class="fgrp"><label class="fl">Enabled</label><select class="fsel auto-ev-en"><option value="1"${ev.enabled!==false?' selected':''}>Yes</option><option value="0"${ev.enabled===false?' selected':''}>No</option></select></div></div>
+  </div>`).join('');
+}
+function renderAutoSched(){
+  const el=g('auto-sched');if(!el)return;
+  const list=_autoData?.scheduled_flows||[];
+  if(!list.length){el.innerHTML='<div style="color:var(--td);font-size:12px">No scheduled flows</div>';return;}
+  el.innerHTML=list.map((j,i)=>`<div class="prem-row" style="background:var(--s2);border:1px solid var(--b);border-radius:8px;padding:10px;margin-bottom:8px">
+    <div style="display:flex;justify-content:space-between;margin-bottom:8px"><strong>Schedule #${i+1}</strong><button class="btn bd bsm" onclick="autoDelSched(${i})">✕</button></div>
+    <div class="fg"><div class="fgrp"><label class="fl">Flow</label><select class="fsel auto-sch-page">${autoPageOpts(j.page_id)}</select></div>
+    <div class="fgrp"><label class="fl">Segment</label><select class="fsel auto-sch-seg"><option value="all"${(j.segment||'all')==='all'?' selected':''}>All</option><option value="active7"${j.segment==='active7'?' selected':''}>Active 7d</option><option value="has_key"${j.segment==='has_key'?' selected':''}>Has key</option><option value="no_key"${j.segment==='no_key'?' selected':''}>No key</option></select></div>
+    <div class="fgrp"><label class="fl">Run at</label><input type="datetime-local" class="fi auto-sch-at" value="${(j.run_at||'').replace(' ','T').slice(0,16)}"></div>
+    <div class="fgrp"><label class="fl">Repeat</label><select class="fsel auto-sch-rep"><option value=""${!j.repeat?' selected':''}>Once</option><option value="daily"${j.repeat==='daily'?' selected':''}>Daily</option></select></div>
+    <div class="fgrp"><label class="fl">Query arg</label><input class="fi auto-sch-q" value="${j.query||''}" placeholder="optional"></div>
+    <div class="fgrp"><label class="fl">On</label><select class="fsel auto-sch-en"><option value="1"${j.enabled?' selected':''}>Yes</option><option value="0"${!j.enabled?' selected':''}>No</option></select></div></div>
+  </div>`).join('');
+}
+function autoAddEvent(){if(!_autoData)_autoData={};if(!_autoData.event_triggers)_autoData.event_triggers=[];_autoData.event_triggers.push({id:'evt_'+Date.now(),event:'new_user',page_id:_autoPages[0]?.id||'',enabled:true});renderAutoEvents();}
+function autoDelEvent(i){_autoData.event_triggers.splice(i,1);renderAutoEvents();}
+function autoAddSched(){if(!_autoData)_autoData={};if(!_autoData.scheduled_flows)_autoData.scheduled_flows=[];_autoData.scheduled_flows.push({id:'sch_'+Date.now(),page_id:_autoPages[0]?.id||'',segment:'all',run_at:new Date(Date.now()+3600000).toISOString().slice(0,19).replace('T',' '),repeat:'',query:'',enabled:true});renderAutoSched();}
+function autoDelSched(i){_autoData.scheduled_flows.splice(i,1);renderAutoSched();}
+function collectAutomation(){
+  const p=JSON.parse(JSON.stringify(_autoData||{}));
+  p.event_triggers=[];document.querySelectorAll('#auto-events .prem-row').forEach((row,i)=>{const o=_autoData.event_triggers?.[i]||{};
+    p.event_triggers.push({id:o.id||('evt_'+Date.now()),event:row.querySelector('.auto-ev-type')?.value||'new_user',page_id:row.querySelector('.auto-ev-page')?.value||'',enabled:row.querySelector('.auto-ev-en')?.value==='1'});
+  });
+  p.scheduled_flows=[];document.querySelectorAll('#auto-sched .prem-row').forEach((row,i)=>{const o=_autoData.scheduled_flows?.[i]||{};
+    let runAt=row.querySelector('.auto-sch-at')?.value||'';if(runAt)runAt=runAt.replace('T',' ')+':00';
+    p.scheduled_flows.push({id:o.id||('sch_'+Date.now()),page_id:row.querySelector('.auto-sch-page')?.value||'',segment:row.querySelector('.auto-sch-seg')?.value||'all',run_at:runAt,repeat:row.querySelector('.auto-sch-rep')?.value||'',query:row.querySelector('.auto-sch-q')?.value||'',enabled:row.querySelector('.auto-sch-en')?.value==='1'});
+  });
+  return p;
+}
+async function saveAutomationAll(){const r=await api('save_automation_settings',{automation:collectAutomation()});if(r.ok){toast('Automation saved!','success');loadAutomation();}else toast(r.error||'Error','error');}
+async function testBrowserFromPanel(){
+  const steps=getBrowserSteps();if(!steps.length)return toast('Open Flow Builder → browser page with steps first','warn');
+  const r=await api('test_browser_steps',{browser_steps:steps,browser_engine:g('auto-test-eng')?.value||'http',query:g('auto-test-q')?.value||'test',browser_timeout:60});
+  const o=g('auto-test-out');if(!o)return;
+  if(!r.ok){o.textContent=r.error||'Failed';return toast(r.error||'Error','error');}
+  o.innerHTML=`<div style="color:var(--g)">Engine: ${r.engine}</div><div style="color:var(--${r.result?.status==='done'?'g':'r'}">Status: ${r.result?.status||'?'}</div>${(r.result?.steps||[]).map(s=>`<div>[${s.type}] ${s.status}${s.error?' — '+s.error:''}${s.value?' = '+String(s.value).slice(0,80):''}</div>`).join('')}${r.result?.error?'<div style="color:var(--r)">'+r.result.error+'</div>':''}`;
+  toast('Test complete: '+r.result?.status,'success');
+}
+
 async function loadAnalytics(){
   const r=await api('get_analytics');if(!r.ok)return toast(r.error||'Error','error');
   if(g('an-browser'))g('an-browser').textContent=r.browser_runs||0;
@@ -10211,8 +10552,18 @@ const BS_TYPES={
   cookie_get:{label:'🍪 Get Cookie→Var',fields:[{k:'name',ph:'auth_token',label:'Cookie name'},{k:'var_name',ph:'cookie_val',label:'Save as'}]},
   set_var:{label:'📦 Set Var',fields:[{k:'var_name',ph:'myvar',label:'Var name'},{k:'value',ph:'fixed or {other}',label:'Value'}]},
   random_var:{label:'🎲 Random from List',fields:[{k:'var_name',ph:'proxy',label:'Var name'},{k:'value',ph:'a,b,c or {LIST}',label:'Comma list'}]},
+  regex_extract:{label:'🔎 Regex→Var',fields:[{k:'value',ph:'/price[">]\\s*([0-9.]+)/',label:'Regex (with group)'},{k:'var_name',ph:'price',label:'Save as'}]},
+  json_extract:{label:'📦 JSON Path→Var',fields:[{k:'value',ph:'data.result',label:'JSON path'},{k:'var_name',ph:'result',label:'Save as'}]},
+  http_post:{label:'📤 HTTP POST',fields:[{k:'value',ph:'https://api.example.com',label:'URL'},{k:'body',ph:'{"q":"{query}"}',label:'Body'},{k:'headers',ph:'Content-Type: application/json',label:'Headers'}]},
+  wait_load:{label:'⌛ Wait Page Load',fields:[{k:'value',ph:'networkidle',label:'State'},{k:'timeout',ph:'15',label:'Timeout(s)'}]},
   raw:{label:'⚡ Raw Python',fields:[{k:'value',ph:'PAGE.evaluate("return document.title")',label:'Python (PAGE=page/BROWSER=driver)'}]}
 };
+function onBrowserEngineChange(){
+  const e=g('pb-browser-engine')?.value||'playwright';
+  const h=g('pb-engine-hint');if(!h)return;
+  const hints={http:'HTTP Lite: open, get_text, regex_extract, json_extract, cookie — NO click/fill/screenshot',node:'Node Playwright: full steps, npm playwright required',playwright:'Python Playwright: full steps, pip install playwright',legacy:'Uses Selenium only if Playwright fails — not recommended'};
+  h.textContent='💡 '+ (hints[e]||'');
+}
 function addBrowserStep(data={}){
   const stype=data.type||'open';const def=BS_TYPES[stype]||BS_TYPES.open;
   const d=document.createElement('div');d.className='bstep-row';
@@ -10289,6 +10640,15 @@ const AUTOMATION_TEMPLATES={
     {type:'click',selector:'button[type="submit"],.register-btn,.signup-btn',stop_on_error:true},
     {type:'wait',value:'3'},
     {type:'screenshot',caption:'Signup result',send_ss:true,delete_after:false}
+  ],
+  http_scrape:[
+    {type:'open',value:'{PAGE_URL}',stop_on_error:true},
+    {type:'wait',value:'1'},
+    {type:'get_text',selector:'h1',var_name:'title',stop_on_error:false},
+    {type:'get_text',selector:'.price,.amount',var_name:'price',stop_on_error:false},
+    {type:'regex_extract',value:'/"title"\\s*:\\s*"([^"]+)"/',var_name:'json_title',stop_on_error:false},
+    {type:'json_extract',value:'args.q',var_name:'api_field',stop_on_error:false},
+    {type:'set_var',var_name:'summary',value:'📊 {title} | 💰 {price}',stop_on_error:false}
   ]
 };
 function addAutomationTemplate(name){
@@ -10297,6 +10657,7 @@ function addAutomationTemplate(name){
   const c=g('bsteps-c');
   if(c&&c.children.length>0){if(!confirm('Existing steps will be replaced. Continue?'))return;c.innerHTML='';}
   steps.forEach(s=>addBrowserStep(s));
+  if(name==='http_scrape'&&g('pb-browser-engine')){g('pb-browser-engine').value='http';onBrowserEngineChange();}
   toast('✅ Template loaded: '+name,'success');
 }
 
