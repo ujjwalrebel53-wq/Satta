@@ -6190,6 +6190,7 @@ body.theme-amoled{--bg:#000;--s:#050505;--s2:#0a0a0a;--s3:#111;}
       <div class="nav-grp-body">
         <button class="ni active" data-nav="dash" onclick="nav('dash',this)">📊 Dashboard</button>
         <button class="ni" data-nav="analytics" onclick="nav('analytics',this)">📈 Analytics</button>
+        <button class="ni ni-prem" data-nav="automation" onclick="nav('automation',this)" style="color:var(--c);border-left-color:var(--c);font-weight:700">⚡ Automation Pro</button>
         <button class="ni" data-nav="security" onclick="nav('security',this)">🛡️ Security Pro</button>
         <button class="ni" data-nav="tools" onclick="nav('tools',this)">🧰 Tools &amp; Backup</button>
         <button class="ni" data-nav="bots" onclick="nav('bots',this)">🤖 Manage Bots</button>
@@ -6200,7 +6201,6 @@ body.theme-amoled{--bg:#000;--s:#050505;--s2:#0a0a0a;--s3:#111;}
       <button type="button" class="nav-grp-h" onclick="toggleNavGrp(this)">Automation <span>▼</span></button>
       <div class="nav-grp-body">
         <button class="ni" data-nav="builder" onclick="nav('builder',this)">🚀 Flow Builder <span style="font-size:9px;color:var(--p);margin-left:auto">Pro</span></button>
-        <button class="ni ni-prem" data-nav="automation" onclick="nav('automation',this)">⚡ Automation Pro</button>
         <button class="ni" data-nav="fj" onclick="nav('fj',this)">🔒 Force Join</button>
         <button class="ni" data-nav="welcome" onclick="nav('welcome',this)">👋 Welcome Message</button>
         <button class="ni" data-nav="tagger" onclick="nav('tagger',this)">📣 User Tagger</button>
@@ -6243,7 +6243,7 @@ body.theme-amoled{--bg:#000;--s:#050505;--s2:#0a0a0a;--s3:#111;}
     </div>
     <a href="?page=logout" class="ni" style="color:var(--r);margin-top:6px">🚪 Logout</a>
   </nav>
-  <div class="sb-foot">Ctrl+K quick jump · v8</div>
+  <div class="sb-foot">Ctrl+K quick jump · v10 Automation</div>
 </aside>
 
 <div class="main">
@@ -6275,14 +6275,15 @@ body.theme-amoled{--bg:#000;--s:#050505;--s2:#0a0a0a;--s3:#111;}
         <h2>⚡ Rebel Command Center</h2>
         <p>Advanced bot control — Flow Builder with Selenium/Playwright automation, live users, broadcast &amp; special bots. Press <strong style="color:var(--c)">Ctrl+K</strong> to jump anywhere.</p>
       </div>
-      <button type="button" class="btn bp" onclick="navQuick('builder')">🌐 Browser Automation</button>
+      <button type="button" class="btn bp" onclick="navQuick('automation')">⚡ Automation Pro</button>
     </div>
 
     <div class="sg"><div class="sc"><div class="sn" id="st-u">—</div><div class="sl">👥 Users</div></div><div class="sc"><div class="sn" id="st-s">—</div><div class="sl">🔍 Searches</div></div><div class="sc"><div class="sn" id="st-k">—</div><div class="sl">🔑 Keys</div></div><div class="sc"><div class="sn" id="st-p">—</div><div class="sl">📄 Flow Pages</div></div></div>
 
     <div class="dash-quick">
       <button type="button" class="dq-btn" onclick="navQuick('users')"><strong>👥 Users</strong><span>Search &amp; manage</span></button>
-      <button type="button" class="dq-btn" onclick="navQuick('builder')"><strong>🚀 Flow Builder</strong><span>Selenium + API</span></button>
+      <button type="button" class="dq-btn" onclick="navQuick('automation')" style="border-color:rgba(0,245,255,.45)"><strong>⚡ Automation Pro</strong><span>HTTP + Playwright engines</span></button>
+      <button type="button" class="dq-btn" onclick="navQuick('builder')"><strong>🚀 Flow Builder</strong><span>Flows + Browser steps</span></button>
       <button type="button" class="dq-btn" onclick="navQuick('broadcast')"><strong>📣 Broadcast</strong><span>DM studio</span></button>
       <button type="button" class="dq-btn" onclick="navQuick('cfg')"><strong>⚙️ Config</strong><span>Security &amp; settings</span></button>
       <button type="button" class="dq-btn" onclick="navQuick('bots')"><strong>🤖 Bots</strong><span>Switch / add</span></button>
@@ -6291,14 +6292,14 @@ body.theme-amoled{--bg:#000;--s:#050505;--s2:#0a0a0a;--s3:#111;}
 
     <div class="dash-feat">
       <div class="df-card g">
-        <h3>🌐 PREMIUM BROWSER ENGINE</h3>
-        <p>Playwright + Selenium stealth headless Chrome. Captcha pause, iframe, scrape, login templates — inside Flow Builder → Type: Browser.</p>
-        <button type="button" class="btn bsu bsm" onclick="navQuick('builder')">Open Flow Builder</button>
+        <h3>⚡ AUTOMATION PRO</h3>
+        <p>HTTP Lite (no Selenium), Node Playwright, event triggers, scheduled flows — sidebar <b>Core → Automation Pro</b> or Ctrl+K.</p>
+        <button type="button" class="btn bsu bsm" onclick="navQuick('automation')">Open Automation Pro</button>
       </div>
       <div class="df-card">
-        <h3>💎 ADVANCED FEATURES</h3>
-        <p>Premium emoji, forward library, force join, live variables, deposit bot, link runner &amp; more — grouped in sidebar.</p>
-        <button type="button" class="btn bg bsm" onclick="openCmd()">⌘ Quick Jump (Ctrl+K)</button>
+        <h3>🌐 FLOW BUILDER</h3>
+        <p>Browser steps, API, curl, IF/ELSE rules — pick engine inside page editor when type = Browser.</p>
+        <button type="button" class="btn bg bsm" onclick="navQuick('builder')">Open Flow Builder</button>
       </div>
     </div>
 
@@ -8895,7 +8896,7 @@ function setActiveBotName(name){
   if(g('topBotName'))g('topBotName').textContent=name;
 }
 const NAV_LABELS={dash:'Dashboard',analytics:'Analytics',automation:'Automation Pro',security:'Security Pro',tools:'Tools & Backup',bots:'Manage Bots',cfg:'Bot Config & Security',fj:'Force Join',welcome:'Welcome Message',tagger:'User Tagger',broadcast:'Broadcast',vault:'API Key Vault',bvars:'Bot Variables',dvars:'Live Variables',builder:'Flow Builder',users:'Users',ukeys:'User Keys',lkeys:'Licence Keys',keygen:'Key Gen',guide:'Full Guide',stickers:'Sticker Library',forwards:'Forward Library',premoji:'Premium Emoji',apkrenamer:'APK Renamer',rosebot:'The Rebel Bot',hiddeneye:'Hidden Eye Bot',promobot:'Promo Bot',linkautomation:'Link Automation',depositbot:'Deposit Bot',linkrunner:'Link Runner',adharbot:'Aadhaar Bot'};
-const CMD_ITEMS=Object.entries(NAV_LABELS).map(([id,label])=>({id,label,icon:({dash:'📊',bots:'🤖',cfg:'⚙️',builder:'🚀',users:'👥',broadcast:'📣',rosebot:'🔥'}[id]||'▸')}));
+const CMD_ITEMS=Object.entries(NAV_LABELS).map(([id,label])=>({id,label,icon:({dash:'📊',analytics:'📈',automation:'⚡',bots:'🤖',cfg:'⚙️',builder:'🚀',users:'👥',broadcast:'📣',rosebot:'🔥'}[id]||'▸')}));
 let cmdSel=0;
 function setBreadcrumb(id){const el=g('topCrumb');if(el)el.textContent=NAV_LABELS[id]||id;}
 function navQuick(id){const btn=document.querySelector('.ni[data-nav="'+id+'"]');if(btn)nav(id,btn);else toast('Section not found','error');}
